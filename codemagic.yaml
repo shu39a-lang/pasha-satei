@@ -8,13 +8,14 @@ workflows:
       app_store_connect: codemagic7
 
     environment:
-      xcode: latest
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.shu39a.pashasatei
+      xcode: latest
       vars:
         XCODE_PROJECT: "PashaSatei.xcodeproj"
         XCODE_SCHEME: "PashaSatei"
+        BUNDLE_ID: "com.shu39a.pashasatei"
 
     scripts:
       - name: Install XcodeGen
@@ -25,7 +26,7 @@ workflows:
         script: |
           xcodegen generate
 
-      - name: Apply provisioning profile
+      - name: Set up code signing
         script: |
           xcode-project use-profiles
 
