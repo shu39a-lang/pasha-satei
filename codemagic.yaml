@@ -9,10 +9,12 @@ workflows:
 
     environment:
       xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.shu39a.pashasatei
       vars:
         XCODE_PROJECT: "PashaSatei.xcodeproj"
         XCODE_SCHEME: "PashaSatei"
-        BUNDLE_ID: "com.shu39a.pashasatei"
 
     scripts:
       - name: Install XcodeGen
@@ -22,20 +24,6 @@ workflows:
       - name: Generate Xcode project
         script: |
           xcodegen generate
-
-      - name: Initialize keychain
-        script: |
-          keychain initialize
-
-      - name: Fetch App Store signing files
-        script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-
-      - name: Add signing certificate
-        script: |
-          keychain add-certificates
 
       - name: Apply provisioning profile
         script: |
