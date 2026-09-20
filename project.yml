@@ -3,13 +3,13 @@ options:
   bundleIdPrefix: com.shu39a
   deploymentTarget:
     iOS: "16.0"
+
 settings:
   base:
     SWIFT_VERSION: 5.0
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1
-    CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ""
+
 targets:
   PashaSatei:
     type: application
