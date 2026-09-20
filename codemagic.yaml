@@ -9,8 +9,10 @@ workflows:
 
     environment:
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.shu39a.pashasatei
+        provisioning_profiles:
+          - Pasha_Satei_AppStore_New
+        certificates:
+          - Pasha_Satei_Distribution
       xcode: latest
       vars:
         XCODE_PROJECT: "PashaSatei.xcodeproj"
