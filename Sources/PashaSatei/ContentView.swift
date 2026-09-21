@@ -1367,8 +1367,8 @@ enum LocalProductRecognizer {
 struct CameraPicker:
     UIViewControllerRepresentable {
 
-    @Binding var image: UIImage?
-    let onFinish: () -> Void
+    let onImage: (UIImage) -> Void
+    let onCancel: () -> Void
 
     func makeCoordinator()
         -> Coordinator {
@@ -1424,19 +1424,22 @@ struct CameraPicker:
                         .InfoKey: Any
                 ]
         ) {
-            parent.image =
-                info[
-                    .originalImage
-                ] as? UIImage
+            guard let image =
+                    info[
+                        .originalImage
+                    ] as? UIImage else {
+                parent.onCancel()
+                return
+            }
 
-            parent.onFinish()
+            parent.onImage(image)
         }
 
         func imagePickerControllerDidCancel(
             _ picker:
                 UIImagePickerController
         ) {
-            parent.onFinish()
+            parent.onCancel()
         }
     }
 }
