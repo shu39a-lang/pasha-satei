@@ -63,6 +63,36 @@ struct YahooPriceItem: Codable, Identifiable {
         ? "\(name)-\(price)"
         : url
     }
+
+    var detailText: String {
+        var parts: [String] = []
+
+        if let capacity {
+            let value =
+                capacity.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+
+            if !value.isEmpty {
+                parts.append(value)
+            }
+        }
+
+        if let condition {
+            let value =
+                condition.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+
+            if !value.isEmpty {
+                parts.append(value)
+            }
+        }
+
+        return parts.joined(
+            separator: " ｜ "
+        )
+    }
 }
 
 struct YahooPriceResponse: Codable {
@@ -1346,33 +1376,10 @@ struct UsedPriceCard: View {
                                                 )
                                                 .lineLimit(2)
 
-                                            let details = [
-                                                item.capacity?
-                                                    .trimmingCharacters(
-                                                        in: .whitespacesAndNewlines
-                                                    ),
-                                                item.condition?
-                                                    .trimmingCharacters(
-                                                        in: .whitespacesAndNewlines
-                                                    )
-                                            ]
-                                            .compactMap { value in
-                                                guard let value,
-                                                      !value.isEmpty
-                                                else {
-                                                    return nil
-                                                }
-                                                return value
-                                            }
-
-                                            if !details.isEmpty {
-                                                Text(
-                                                    details.joined(
-                                                        separator: " ｜ "
-                                                    )
-                                                )
-                                                .font(.caption.bold())
-                                                .foregroundStyle(green)
+                                            if !item.detailText.isEmpty {
+                                                Text(item.detailText)
+                                                    .font(.caption.bold())
+                                                    .foregroundStyle(green)
                                             }
 
                                             if let seller =
