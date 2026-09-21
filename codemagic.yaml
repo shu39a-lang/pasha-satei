@@ -26,6 +26,13 @@ workflows:
         script: |
           xcodegen generate
 
+      - name: Set automatic build number
+        script: |
+          cd "$CM_BUILD_DIR"
+          AUTO_BUILD_NUMBER=$(($PROJECT_BUILD_NUMBER + 100))
+          echo "Automatic build number: $AUTO_BUILD_NUMBER"
+          agvtool new-version -all "$AUTO_BUILD_NUMBER"
+
       - name: Set up code signing on PashaSatei project
         script: |
           xcode-project use-profiles \
@@ -38,7 +45,7 @@ workflows:
             -scheme "$XCODE_SCHEME" \
             -configuration Release \
             -showBuildSettings | \
-          egrep "CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PRODUCT_BUNDLE_IDENTIFIER"
+          egrep "CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PRODUCT_BUNDLE_IDENTIFIER|CURRENT_PROJECT_VERSION"
 
       - name: Build signed IPA
         script: |
