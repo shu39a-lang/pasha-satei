@@ -1063,20 +1063,20 @@ struct CompareView: View {
     let productName: String
     let barcode: String
 
-    @State private var salePrices:
-        [String: String] = [:]
+    @State private var salePrices: [String: String] = [:]
+    @State private var shippingCosts: [String: String] = [:]
 
-    @State private var shippingCosts:
-        [String: String] = [:]
+    @State private var mercariPrice: YahooPriceResponse?
+    @State private var isLoadingMercari = false
+    @State private var mercariError = ""
 
-    @State private var yahooPrice:
-        YahooPriceResponse?
+    @State private var yahooPrice: YahooPriceResponse?
+    @State private var isLoadingYahoo = false
+    @State private var yahooError = ""
 
-    @State private var isLoadingYahoo =
-        false
-
-    @State private var yahooError =
-        ""
+    @State private var rakumaPrice: YahooPriceResponse?
+    @State private var isLoadingRakuma = false
+    @State private var rakumaError = ""
 
     @Environment(\.openURL)
     private var openURL
@@ -1109,15 +1109,30 @@ struct CompareView: View {
                         .font(.title2.bold())
 
                         if !barcode.isEmpty {
-                            Text(
-                                "JAN / EAN: \(barcode)"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text("JAN / EAN: \(barcode)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
-                    YahooUsedPriceCard(
+                    UsedPriceCard(
+                        title: "メルカリ 現在出品中相場",
+                        countLabel: "現在出品中",
+                        emptyMessage: "この商品はメルカリの現在出品中の商品で該当商品が見つかりませんでした。",
+                        data: mercariPrice,
+                        isLoading: isLoadingMercari,
+                        errorText: mercariError,
+                        onRetry: {
+                            Task {
+                                await loadMercariPrice()
+                            }
+                        }
+                    )
+
+                    UsedPriceCard(
+                        title: "Yahoo!ショッピング 中古相場",
+                        countLabel: "中古",
+                        emptyMessage: "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。",
                         data: yahooPrice,
                         isLoading: isLoadingYahoo,
                         errorText: yahooError,
@@ -1128,14 +1143,27 @@ struct CompareView: View {
                         }
                     )
 
+                    UsedPriceCard(
+                        title: "楽天ラクマ 現在出品中相場",
+                        countLabel: "現在出品中",
+                        emptyMessage: "この商品は楽天ラクマの現在出品中の商品で該当商品が見つかりませんでした。",
+                        data: rakumaPrice,
+                        isLoading: isLoadingRakuma,
+                        errorText: rakumaError,
+                        onRetry: {
+                            Task {
+                                await loadRakumaPrice()
+                            }
+                        }
+                    )
+
                     VStack(
                         alignment: .leading,
                         spacing: 10
                     ) {
                         Label(
                             "販売先ごとの手取りを比較",
-                            systemImage:
-                                "chart.bar.doc.horizontal.fill"
+                            systemImage: "chart.bar.doc.horizontal.fill"
                         )
                         .font(.headline)
                         .foregroundStyle(green)
@@ -1160,28 +1188,22 @@ struct CompareView: View {
                         )
                     )
 
-                    ForEach(marketplaces) {
-                        market in
-
+                    ForEach(marketplaces) { market in
                         MarketplaceCard(
                             market: market,
                             salePrice: binding(
                                 for: market.name,
-                                dictionary:
-                                    $salePrices
+                                dictionary: $salePrices
                             ),
                             shippingCost: binding(
                                 for: market.name,
-                                dictionary:
-                                    $shippingCosts
+                                dictionary: $shippingCosts
                             ),
                             isBest:
                                 bestMarketName
                                 == market.name,
                             onSearch: {
-                                openMarket(
-                                    market: market
-                                )
+                                openMarket(market: market)
                             }
                         )
                     }
@@ -1192,8 +1214,48 @@ struct CompareView: View {
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: productName) {
-            await loadYahooPrice()
+            async let mercariTask: Void = loadMercariPrice()
+            async let yahooTask: Void = loadYahooPrice()
+            async let rakumaTask: Void = loadRakumaPrice()
+            _ = await (
+                mercariTask,
+                yahooTask,
+                rakumaTask
+            )
         }
+    }
+
+    @MainActor
+    private func loadMercariPrice() async {
+        guard !productName
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty else {
+            return
+        }
+
+        isLoadingMercari = true
+        mercariError = ""
+
+        let result =
+            await MercariPriceAPI.fetch(
+                productName: productName
+            )
+
+        if let result, result.ok {
+            mercariPrice = result
+        } else {
+            mercariPrice = result
+            mercariError =
+                result?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "メルカリの現在出品価格を取得できませんでした。"
+        }
+
+        isLoadingMercari = false
     }
 
     @MainActor
@@ -1202,8 +1264,7 @@ struct CompareView: View {
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-            .isEmpty
-        else {
+            .isEmpty else {
             return
         }
 
@@ -1231,24 +1292,49 @@ struct CompareView: View {
         isLoadingYahoo = false
     }
 
-    private var bestMarketName:
-        String? {
+    @MainActor
+    private func loadRakumaPrice() async {
+        guard !productName
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty else {
+            return
+        }
 
+        isLoadingRakuma = true
+        rakumaError = ""
+
+        let result =
+            await RakumaPriceAPI.fetch(
+                productName: productName
+            )
+
+        if let result, result.ok {
+            rakumaPrice = result
+        } else {
+            rakumaPrice = result
+            rakumaError =
+                result?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "楽天ラクマの現在出品価格を取得できませんでした。"
+        }
+
+        isLoadingRakuma = false
+    }
+
+    private var bestMarketName: String? {
         marketplaces
             .map {
                 (
                     $0.name,
-                    netAmount(
-                        for: $0
-                    )
+                    netAmount(for: $0)
                 )
             }
-            .filter {
-                $0.1 > 0
-            }
-            .max {
-                $0.1 < $1.1
-            }?
+            .filter { $0.1 > 0 }
+            .max { $0.1 < $1.1 }?
             .0
     }
 
@@ -1256,56 +1342,42 @@ struct CompareView: View {
         _ text: String
     ) -> Double {
         Double(
-            text
-                .replacingOccurrences(
-                    of: ",",
-                    with: ""
-                )
+            text.replacingOccurrences(
+                of: ",",
+                with: ""
+            )
         ) ?? 0
     }
 
     private func netAmount(
         for market: Marketplace
     ) -> Double {
+        let price = numericValue(
+            salePrices[market.name] ?? ""
+        )
 
-        let price =
-            numericValue(
-                salePrices[
-                    market.name
-                ] ?? ""
-            )
-
-        let shipping =
-            numericValue(
-                shippingCosts[
-                    market.name
-                ] ?? ""
-            )
+        let shipping = numericValue(
+            shippingCosts[market.name] ?? ""
+        )
 
         return max(
             0,
             price
-            - (
-                price
-                * market.feeRate
-            )
+            - (price * market.feeRate)
             - shipping
         )
     }
 
     private func binding(
         for key: String,
-        dictionary:
-            Binding<[String: String]>
+        dictionary: Binding<[String: String]>
     ) -> Binding<String> {
         Binding(
             get: {
-                dictionary.wrappedValue[key]
-                ?? ""
+                dictionary.wrappedValue[key] ?? ""
             },
             set: {
-                dictionary.wrappedValue[key]
-                = $0
+                dictionary.wrappedValue[key] = $0
             }
         )
     }
@@ -1314,11 +1386,9 @@ struct CompareView: View {
         market: Marketplace
     ) {
         let keyword =
-            productName
-                .trimmingCharacters(
-                    in:
-                        .whitespacesAndNewlines
-                )
+            productName.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
 
         guard !keyword.isEmpty else {
             return
@@ -1326,22 +1396,21 @@ struct CompareView: View {
 
         let encoded =
             keyword.addingPercentEncoding(
-                withAllowedCharacters:
-                    .urlQueryAllowed
+                withAllowedCharacters: .urlQueryAllowed
             ) ?? ""
 
-        if let url =
-            URL(
-                string:
-                    market.searchBaseURL
-                    + encoded
-            ) {
+        if let url = URL(
+            string: market.searchBaseURL + encoded
+        ) {
             openURL(url)
         }
     }
 }
 
-struct YahooUsedPriceCard: View {
+struct UsedPriceCard: View {
+    let title: String
+    let countLabel: String
+    let emptyMessage: String
     let data: YahooPriceResponse?
     let isLoading: Bool
     let errorText: String
@@ -1360,7 +1429,7 @@ struct YahooUsedPriceCard: View {
         ) {
             HStack {
                 Label(
-                    "Yahoo!ショッピング 中古相場",
+                    title,
                     systemImage:
                         "cart.fill"
                 )
@@ -1401,7 +1470,7 @@ struct YahooUsedPriceCard: View {
                     }
 
                     Text(
-                        "中古 \(data.count)件を取得"
+                        "\(countLabel) \(data.count)件を取得"
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1483,7 +1552,7 @@ struct YahooUsedPriceCard: View {
 
                 } else {
                     Text(
-                        "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。"
+                        emptyMessage
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1785,6 +1854,108 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
+    }
+}
+
+enum RakumaPriceAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(
+        productName: String
+    ) async -> YahooPriceResponse? {
+        guard let url = URL(string: endpoint) else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "action": "rakumaUsedPrice",
+            "productName": productName
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: body
+        ) else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 20
+
+        do {
+            let (data, response) = try await URLSession.shared.data(
+                for: request
+            )
+
+            guard let http = response as? HTTPURLResponse,
+                  200...299 ~= http.statusCode else {
+                return nil
+            }
+
+            return try JSONDecoder().decode(
+                YahooPriceResponse.self,
+                from: data
+            )
+        } catch {
+            return nil
+        }
+    }
+}
+
+enum MercariPriceAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(
+        productName: String
+    ) async -> YahooPriceResponse? {
+        guard let url = URL(string: endpoint) else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "action": "mercariUsedPrice",
+            "productName": productName
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: body
+        ) else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 20
+
+        do {
+            let (data, response) = try await URLSession.shared.data(
+                for: request
+            )
+
+            guard let http = response as? HTTPURLResponse,
+                  200...299 ~= http.statusCode else {
+                return nil
+            }
+
+            return try JSONDecoder().decode(
+                YahooPriceResponse.self,
+                from: data
+            )
+        } catch {
+            return nil
+        }
     }
 }
 
