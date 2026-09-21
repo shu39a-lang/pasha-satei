@@ -596,6 +596,9 @@ struct StepCard: View {
 struct ResultView: View {
     let image: UIImage?
 
+    @Environment(\.openURL)
+    private var openURL
+
     @Binding var productName: String
 
     @Binding var detectedBarcode: String
@@ -661,6 +664,13 @@ struct ResultView: View {
                             )
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+
+                            Text(
+                                "正確な商品が出ない場合は、角度や写す面を変えて撮り直してみてください。"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
@@ -820,31 +830,64 @@ struct ResultView: View {
                                 candidates.prefix(3),
                                 id: \.self
                             ) { candidate in
-                                Button {
-                                    productName =
-                                        candidate
-                                } label: {
-                                    HStack {
-                                        Text(candidate)
+                                VStack(
+                                    alignment: .leading,
+                                    spacing: 8
+                                ) {
+                                    Button {
+                                        productName =
+                                            candidate
+                                    } label: {
+                                        HStack {
+                                            Text(candidate)
+                                                .multilineTextAlignment(
+                                                    .leading
+                                                )
 
-                                        Spacer()
+                                            Spacer()
 
-                                        Image(
-                                            systemName:
-                                                "chevron.right"
-                                        )
+                                            Image(
+                                                systemName:
+                                                    "checkmark.circle"
+                                            )
+                                        }
                                     }
-                                    .padding(12)
-                                    .background(
-                                        Color.white.opacity(0.06)
-                                    )
-                                    .clipShape(
-                                        RoundedRectangle(
-                                            cornerRadius: 12
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        let encoded =
+                                            candidate.addingPercentEncoding(
+                                                withAllowedCharacters:
+                                                    .urlQueryAllowed
+                                            ) ?? candidate
+
+                                        if let url =
+                                            URL(
+                                                string:
+                                                    "https://www.google.com/search?q=\(encoded)"
+                                            ) {
+                                            openURL(url)
+                                        }
+                                    } label: {
+                                        Label(
+                                            "この候補をGoogleで確認",
+                                            systemImage:
+                                                "arrow.up.right.square"
                                         )
-                                    )
+                                        .font(.caption.bold())
+                                        .foregroundStyle(green)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                                .padding(12)
+                                .background(
+                                    Color.white.opacity(0.06)
+                                )
+                                .clipShape(
+                                    RoundedRectangle(
+                                        cornerRadius: 12
+                                    )
+                                )
                             }
                         }
                     }
@@ -961,6 +1004,15 @@ struct CompareView: View {
     @State private var yahooError =
         ""
 
+    @State private var rakumaPrice:
+        YahooPriceResponse?
+
+    @State private var isLoadingRakuma =
+        false
+
+    @State private var rakumaError =
+        ""
+
     @Environment(\.openURL)
     private var openURL
 
@@ -1024,6 +1076,20 @@ struct CompareView: View {
                         onRetry: {
                             Task {
                                 await loadYahooPrice()
+                            }
+                        }
+                    )
+
+                    UsedPriceCard(
+                        title: "楽天ラクマ 現在出品中相場",
+                        countLabel: "現在出品中",
+                        emptyMessage: "この商品は楽天ラクマの現在出品中の商品で該当商品が見つかりませんでした。",
+                        data: rakumaPrice,
+                        isLoading: isLoadingRakuma,
+                        errorText: rakumaError,
+                        onRetry: {
+                            Task {
+                                await loadRakumaPrice()
                             }
                         }
                     )
@@ -1094,7 +1160,12 @@ struct CompareView: View {
         .task(id: productName) {
             async let mercariTask: Void = loadMercariPrice()
             async let yahooTask: Void = loadYahooPrice()
-            _ = await (mercariTask, yahooTask)
+            async let rakumaTask: Void = loadRakumaPrice()
+            _ = await (
+                mercariTask,
+                yahooTask,
+                rakumaTask
+            )
         }
     }
 
@@ -1227,6 +1298,40 @@ struct CompareView: View {
             )
             - shipping
         )
+    }
+
+    @MainActor
+    private func loadRakumaPrice() async {
+        guard !productName
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty
+        else {
+            return
+        }
+
+        isLoadingRakuma = true
+        rakumaError = ""
+
+        let result =
+            await RakumaPriceAPI.fetch(
+                productName: productName
+            )
+
+        if let result, result.ok {
+            rakumaPrice = result
+        } else {
+            rakumaPrice = result
+            rakumaError =
+                result?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "楽天ラクマの現在出品価格を取得できませんでした。"
+        }
+
+        isLoadingRakuma = false
     }
 
     private func binding(
@@ -1730,6 +1835,75 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
+    }
+}
+
+enum RakumaPriceAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(
+        productName: String
+    ) async -> YahooPriceResponse? {
+
+        guard let url =
+                URL(string: endpoint)
+        else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "action": "rakumaUsedPrice",
+            "productName": productName
+        ]
+
+        guard let jsonData =
+                try? JSONSerialization
+                    .data(
+                        withJSONObject: body
+                    )
+        else {
+            return nil
+        }
+
+        var request =
+            URLRequest(url: url)
+
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField:
+                "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 20
+
+        do {
+            let (data, response) =
+                try await URLSession
+                    .shared
+                    .data(
+                        for: request
+                    )
+
+            guard let http =
+                    response
+                    as? HTTPURLResponse,
+                  200...299 ~=
+                    http.statusCode
+            else {
+                return nil
+            }
+
+            return try JSONDecoder()
+                .decode(
+                    YahooPriceResponse.self,
+                    from: data
+                )
+
+        } catch {
+            return nil
+        }
     }
 }
 
