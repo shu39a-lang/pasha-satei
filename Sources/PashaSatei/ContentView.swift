@@ -115,6 +115,7 @@ struct LocalRecognitionResult {
 struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var selectedImage: UIImage?
+    @State private var capturedImages: [UIImage] = []
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
 
@@ -167,14 +168,27 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showCamera) {
     CameraPicker(
         onImage: { image in
-            selectedImage = image
             showCamera = false
+            capturedImages.append(image)
+
+            if capturedImages.count == 1 {
+                selectedImage = image
+            }
 
             Task { @MainActor in
-                isRecognizing = true
-                path.append(.result)
-                await Task.yield()
-                await recognize(image: image)
+                if capturedImages.count < 3 {
+                    try? await Task.sleep(
+                        nanoseconds: 350_000_000
+                    )
+                    showCamera = true
+                } else {
+                    let images = capturedImages
+                    capturedImages = []
+                    isRecognizing = true
+                    path.append(.result)
+                    await Task.yield()
+                    await recognize(images: images)
+                }
             }
         },
         onCancel: {
@@ -196,13 +210,13 @@ struct ContentView: View {
                 isRecognizing = true
                 path.append(.result)
                 await Task.yield()
-                await recognize(image: image)
+                await recognize(images: [image])
             }
         }
     }
 
     @MainActor
-    private func recognize(image: UIImage) async {
+    private func recognize(images: [UIImage]) async {
         isRecognizing = true
 
         productName = ""
@@ -215,18 +229,39 @@ struct ContentView: View {
         evidence = []
         candidates = []
 
-        let local =
-            await LocalProductRecognizer.recognize(
-                image: image
-            )
+        guard !images.isEmpty else {
+            isRecognizing = false
+            return
+        }
 
-        detectedBarcode = local.barcode
+        var allText: [String] = []
+        var barcode = ""
+
+        for image in images {
+            let local =
+                await LocalProductRecognizer.recognize(
+                    image: image
+                )
+
+            if !local.text.isEmpty {
+                allText.append(local.text)
+            }
+
+            if barcode.isEmpty,
+               !local.barcode.isEmpty {
+                barcode = local.barcode
+            }
+        }
+
+        detectedBarcode = barcode
 
         let gemini =
             await GeminiProductAPI.analyze(
-                image: image,
-                ocrText: local.text,
-                barcode: local.barcode
+                images: images,
+                ocrText: allText.joined(
+                    separator: "\n---別角度---\n"
+                ),
+                barcode: barcode
             )
 
         if let gemini, gemini.ok {
@@ -286,10 +321,10 @@ struct ContentView: View {
 
             if detectedBarcode.isEmpty {
                 recognitionSource =
-                    "Gemini画像認識 + OCR補助"
+                    "Gemini 3画像統合認識 + OCR補助"
             } else {
                 recognitionSource =
-                    "Gemini画像認識 + JAN/EAN照合 + OCR補助"
+                    "Gemini 3画像統合認識 + JAN/EAN照合 + OCR補助"
             }
         } else {
             recognitionSource =
@@ -298,7 +333,8 @@ struct ContentView: View {
                 : "JAN/EAN + 画像文字認識"
 
             let lines =
-                local.text
+                allText
+                    .joined(separator: "\n")
                     .components(separatedBy: .newlines)
                     .map {
                         $0.trimmingCharacters(
@@ -385,11 +421,11 @@ struct HomeView: View {
                             .foregroundStyle(green)
                         }
 
-                        Text("撮るだけで商品をAI判定")
+                        Text("3方向から撮ってAI判定")
                             .font(.title2.bold())
 
                         Text(
-                            "バーコードが無くても、写真全体からブランド・商品名・型番・容量などを判断します。"
+                            "正面・背面・側面の3枚をまとめて確認し、写真1枚による判定のブレを減らします。"
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -469,10 +505,11 @@ struct HomeView: View {
                     }
 
                     Button {
+                        capturedImages = []
                         showCamera = true
                     } label: {
                         Label(
-                            "カメラで撮影",
+                            "3枚撮影を開始",
                             systemImage: "camera.fill"
                         )
                         .font(.title3.bold())
@@ -1878,24 +1915,33 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     static func analyze(
-        image: UIImage,
+        images: [UIImage],
         ocrText: String,
         barcode: String
     ) async -> GeminiProductResponse? {
 
         guard let url =
-                URL(string: endpoint),
-              let imageData =
+                URL(string: endpoint)
+        else {
+            return nil
+        }
+
+        let imageStrings =
+            images.prefix(3).compactMap {
+                image in
+
                 image.jpegData(
-                    compressionQuality: 0.78
-                ) else {
+                    compressionQuality: 0.72
+                )?
+                .base64EncodedString()
+            }
+
+        guard !imageStrings.isEmpty else {
             return nil
         }
 
         let body: [String: Any] = [
-            "imageBase64":
-                imageData
-                    .base64EncodedString(),
+            "imagesBase64": imageStrings,
             "ocrText": ocrText,
             "barcode": barcode
         ]
