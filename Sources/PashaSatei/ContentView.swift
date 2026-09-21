@@ -33,6 +33,25 @@ private let marketplaces = [
     )
 ]
 
+struct GoogleWebEntity: Codable {
+    let description: String
+    let score: Double
+}
+
+struct GoogleVisionResponse: Codable {
+    let ok: Bool
+    let bestGuess: String?
+    let webEntities: [GoogleWebEntity]?
+    let fullText: String?
+    let error: String?
+}
+
+struct LocalRecognitionResult {
+    let text: String
+    let barcode: String
+    let productCandidate: String
+}
+
 struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var selectedImage: UIImage?
@@ -40,8 +59,9 @@ struct ContentView: View {
     @State private var showCamera = false
 
     @State private var productName = ""
-    @State private var detectedText = ""
     @State private var detectedBarcode = ""
+    @State private var recognitionSource = ""
+    @State private var recognitionCandidates: [GoogleWebEntity] = []
     @State private var isRecognizing = false
 
     var body: some View {
@@ -56,8 +76,9 @@ struct ContentView: View {
                     ResultView(
                         image: selectedImage,
                         productName: $productName,
-                        detectedText: detectedText,
                         detectedBarcode: detectedBarcode,
+                        recognitionSource: recognitionSource,
+                        recognitionCandidates: recognitionCandidates,
                         isRecognizing: isRecognizing,
                         onCompare: {
                             path.append(.compare)
@@ -72,6 +93,7 @@ struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $selectedImage) {
                 showCamera = false
@@ -106,14 +128,55 @@ struct ContentView: View {
     private func recognize(image: UIImage) async {
         isRecognizing = true
         productName = ""
-        detectedText = ""
         detectedBarcode = ""
+        recognitionSource = ""
+        recognitionCandidates = []
 
-        let result = await ProductRecognizer.recognize(image: image)
+        async let localTask = LocalProductRecognizer.recognize(image: image)
+        async let googleTask = GoogleVisionAPI.analyze(image: image)
 
-        detectedText = result.text
-        detectedBarcode = result.barcode
-        productName = result.productCandidate
+        let local = await localTask
+        let google = await googleTask
+
+        detectedBarcode = local.barcode
+
+        if let google, google.ok {
+            recognitionCandidates = google.webEntities ?? []
+
+            let bestGuess =
+                google.bestGuess?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? ""
+
+            if !bestGuess.isEmpty {
+                productName = bestGuess
+            } else if let first =
+                        recognitionCandidates.first?
+                            .description,
+                      !first.isEmpty {
+                productName = first
+            } else {
+                productName = local.productCandidate
+            }
+
+            if !local.barcode.isEmpty {
+                recognitionSource =
+                    "Google画像認識 + バーコード + OCR"
+            } else {
+                recognitionSource =
+                    "Google画像認識 + OCR"
+            }
+        } else {
+            productName = local.productCandidate
+
+            if !local.barcode.isEmpty {
+                recognitionSource =
+                    "バーコード + OCR"
+            } else {
+                recognitionSource =
+                    "OCR"
+            }
+        }
 
         isRecognizing = false
     }
@@ -124,85 +187,275 @@ struct HomeView: View {
     @Binding var showCamera: Bool
 
     private let green = Color(
-        red: 32 / 255,
-        green: 177 / 255,
-        blue: 90 / 255
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
     )
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("パシャ査定")
-                        .font(.system(size: 34, weight: .bold))
+            ScrollView {
+                VStack(spacing: 22) {
 
-                    Text("どこで売れば一番手取りが多いか比較")
+                    VStack(
+                        alignment: .leading,
+                        spacing: 6
+                    ) {
+                        HStack(spacing: 4) {
+                            Text("パシャ")
+                                .font(
+                                    .system(
+                                        size: 38,
+                                        weight: .black
+                                    )
+                                )
+
+                            Text("査定")
+                                .font(
+                                    .system(
+                                        size: 38,
+                                        weight: .black
+                                    )
+                                )
+                                .foregroundStyle(green)
+                        }
+
+                        Text(
+                            "どこで売れば一番手取りが多いか比較"
+                        )
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: .leading
+                    )
+
+                    VStack(spacing: 18) {
+                        ZStack {
+                            Circle()
+                                .fill(green.opacity(0.12))
+                                .frame(
+                                    width: 120,
+                                    height: 120
+                                )
+
+                            Image(
+                                systemName:
+                                    "viewfinder.circle.fill"
+                            )
+                            .font(.system(size: 72))
+                            .foregroundStyle(green)
+                        }
+
+                        Text("撮るだけで商品を検索")
+                            .font(.title2.bold())
+
+                        Text(
+                            "Google画像認識・バーコード・文字情報を組み合わせて、商品候補を探します。"
+                        )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
 
-                VStack(spacing: 14) {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 64))
-                        .foregroundStyle(green)
-
-                    Text("売りたい商品を撮影")
-                        .font(.title3.bold())
-
-                    Text(
-                        "商品名・型番・バーコードが見えるように撮影すると、商品を特定しやすくなります。"
-                    )
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-
-                Button {
-                    showCamera = true
-                } label: {
-                    Label(
-                        "カメラで撮影",
-                        systemImage: "camera.fill"
-                    )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(green)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                PhotosPicker(
-                    selection: $selectedPhoto,
-                    matching: .images
-                ) {
-                    Label(
-                        "写真を選ぶ",
-                        systemImage: "photo"
-                    )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                Color.gray.opacity(0.3),
-                                lineWidth: 1.5
+                        HStack(spacing: 8) {
+                            FeatureBadge(
+                                text: "画像検索",
+                                icon: "sparkles"
                             )
+
+                            FeatureBadge(
+                                text: "バーコード",
+                                icon: "barcode.viewfinder"
+                            )
+
+                            FeatureBadge(
+                                text: "価格比較",
+                                icon: "chart.bar.fill"
+                            )
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(
+                                    red: 9 / 255,
+                                    green: 38 / 255,
+                                    blue: 28 / 255
+                                ),
+                                Color(
+                                    red: 20 / 255,
+                                    green: 20 / 255,
+                                    blue: 22 / 255
+                                )
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
+                    .overlay(
+                        RoundedRectangle(
+                            cornerRadius: 26
+                        )
+                        .stroke(
+                            green.opacity(0.35),
+                            lineWidth: 1
+                        )
+                    )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 26
+                        )
+                    )
+
+                    HStack(spacing: 10) {
+                        StepCard(
+                            number: "1",
+                            title: "撮影",
+                            icon: "camera.fill"
+                        )
+
+                        StepCard(
+                            number: "2",
+                            title: "商品特定",
+                            icon: "magnifyingglass"
+                        )
+
+                        StepCard(
+                            number: "3",
+                            title: "価格比較",
+                            icon: "chart.bar.fill"
+                        )
+                    }
+
+                    Button {
+                        showCamera = true
+                    } label: {
+                        Label(
+                            "カメラで撮影",
+                            systemImage: "camera.fill"
+                        )
+                        .font(.title3.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .background(green)
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 18
+                        )
+                    )
+
+                    PhotosPicker(
+                        selection: $selectedPhoto,
+                        matching: .images
+                    ) {
+                        Label(
+                            "写真を選ぶ",
+                            systemImage: "photo.fill"
+                        )
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            Color(
+                                red: 28 / 255,
+                                green: 28 / 255,
+                                blue: 30 / 255
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                            .stroke(
+                                Color.white.opacity(0.15),
+                                lineWidth: 1
+                            )
+                        )
+                    }
+                    .foregroundStyle(.white)
                 }
-                .foregroundStyle(.primary)
+                .padding(18)
             }
-            .padding(16)
         }
         .navigationBarHidden(true)
+    }
+}
+
+struct FeatureBadge: View {
+    let text: String
+    let icon: String
+
+    var body: some View {
+        Label(
+            text,
+            systemImage: icon
+        )
+        .font(.caption.bold())
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            Color.white.opacity(0.08)
+        )
+        .clipShape(Capsule())
+    }
+}
+
+struct StepCard: View {
+    let number: String
+    let title: String
+    let icon: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(number)
+                .font(.caption.bold())
+                .foregroundStyle(.black)
+                .frame(
+                    width: 26,
+                    height: 26
+                )
+                .background(green)
+                .clipShape(Circle())
+
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(green)
+
+            Text(title)
+                .font(.caption.bold())
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: 96
+        )
+        .background(
+            Color(
+                red: 24 / 255,
+                green: 24 / 255,
+                blue: 26 / 255
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 16
+            )
+        )
     }
 }
 
@@ -211,125 +464,235 @@ struct ResultView: View {
 
     @Binding var productName: String
 
-    let detectedText: String
     let detectedBarcode: String
+    let recognitionSource: String
+    let recognitionCandidates: [GoogleWebEntity]
     let isRecognizing: Bool
 
     let onCompare: () -> Void
 
     private let green = Color(
-        red: 32 / 255,
-        green: 177 / 255,
-        blue: 90 / 255
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
     )
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
 
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 230)
-                        .background(Color.black)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 18)
-                        )
-                }
+            ScrollView {
+                VStack(spacing: 18) {
 
-                if isRecognizing {
-                    ProgressView(
-                        "商品情報を読み取っています…"
-                    )
-                    .padding()
-                }
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                maxWidth: .infinity
+                            )
+                            .frame(height: 270)
+                            .background(Color.black)
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: 22
+                                )
+                            )
+                    }
 
-                VStack(
-                    alignment: .leading,
-                    spacing: 8
-                ) {
-                    Text("商品名・型番")
-                        .font(.headline)
+                    if isRecognizing {
+                        VStack(spacing: 10) {
+                            ProgressView()
+                                .tint(green)
 
-                    TextField(
-                        "商品名または型番",
-                        text: $productName
-                    )
-                    .textFieldStyle(.roundedBorder)
+                            Text(
+                                "Google画像認識で検索しています…"
+                            )
+                            .font(.headline)
+                        }
+                        .padding()
+                    }
 
-                    Text(
-                        "認識結果が違う場合は直接修正できます。"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                if !detectedBarcode.isEmpty {
-                    InfoRow(
-                        title: "バーコード",
-                        value: detectedBarcode
-                    )
-                }
-
-                if !detectedText.isEmpty {
                     VStack(
                         alignment: .leading,
-                        spacing: 6
+                        spacing: 10
                     ) {
-                        Text("写真から読み取った文字")
-                            .font(.headline)
+                        HStack {
+                            Image(
+                                systemName:
+                                    "checkmark.seal.fill"
+                            )
+                            .foregroundStyle(green)
 
-                        Text(detectedText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            Text("認識した商品候補")
+                                .font(.headline)
+
+                            Spacer()
+                        }
+
+                        TextField(
+                            "商品名を確認・修正",
+                            text: $productName
+                        )
+                        .font(.title3.bold())
+                        .padding(14)
+                        .background(
+                            Color.white.opacity(0.07)
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 12
+                            )
+                        )
+
+                        Text(
+                            "結果が違う場合は、この欄を直接修正できます。"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                    .padding()
-                    .frame(
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
+                    .padding(16)
                     .background(
-                        Color(.secondarySystemBackground)
+                        Color(
+                            red: 24 / 255,
+                            green: 24 / 255,
+                            blue: 26 / 255
+                        )
                     )
                     .clipShape(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(
+                            cornerRadius: 18
+                        )
                     )
-                }
 
-                Button(action: onCompare) {
-                    Label(
-                        "販売先と手取り額を比較",
-                        systemImage: "chart.bar.fill"
+                    InfoCard(
+                        title: "認識方法",
+                        value:
+                            recognitionSource.isEmpty
+                            ? "判定中"
+                            : recognitionSource,
+                        icon: "sparkles"
                     )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .foregroundStyle(.white)
-                    .background(green)
-                    .clipShape(
-                        RoundedRectangle(cornerRadius: 14)
-                    )
+
+                    if !detectedBarcode.isEmpty {
+                        InfoCard(
+                            title: "JAN / EAN バーコード",
+                            value: detectedBarcode,
+                            icon: "barcode"
+                        )
+                    }
+
+                    if !recognitionCandidates.isEmpty {
+                        VStack(
+                            alignment: .leading,
+                            spacing: 12
+                        ) {
+                            Text("Google画像検索の候補")
+                                .font(.headline)
+
+                            ForEach(
+                                Array(
+                                    recognitionCandidates
+                                        .prefix(5)
+                                        .enumerated()
+                                ),
+                                id: \.offset
+                            ) { index, item in
+                                HStack {
+                                    Text(
+                                        "\(index + 1)"
+                                    )
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.black)
+                                    .frame(
+                                        width: 24,
+                                        height: 24
+                                    )
+                                    .background(green)
+                                    .clipShape(Circle())
+
+                                    Text(
+                                        item.description
+                                    )
+                                    .font(.subheadline)
+
+                                    Spacer()
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .background(
+                            Color(
+                                red: 24 / 255,
+                                green: 24 / 255,
+                                blue: 26 / 255
+                            )
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                        )
+                    }
+
+                    Button(action: onCompare) {
+                        Label(
+                            "販売先と手取り額を比較",
+                            systemImage:
+                                "chart.bar.fill"
+                        )
+                        .font(.headline)
+                        .frame(
+                            maxWidth: .infinity
+                        )
+                        .padding(.vertical, 17)
+                        .foregroundStyle(.white)
+                        .background(green)
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 16
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(16)
             }
-            .padding(16)
         }
         .navigationTitle("商品確認")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-struct InfoRow: View {
+struct InfoCard: View {
     let title: String
     let value: String
+    let icon: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
 
     var body: some View {
-        HStack {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(green)
+                .frame(
+                    width: 42,
+                    height: 42
+                )
+                .background(
+                    green.opacity(0.12)
+                )
+                .clipShape(Circle())
+
             VStack(
                 alignment: .leading,
-                spacing: 4
+                spacing: 3
             ) {
                 Text(title)
                     .font(.caption)
@@ -341,12 +704,18 @@ struct InfoRow: View {
 
             Spacer()
         }
-        .padding()
+        .padding(16)
         .background(
-            Color(.secondarySystemBackground)
+            Color(
+                red: 24 / 255,
+                green: 24 / 255,
+                blue: 26 / 255
+            )
         )
         .clipShape(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(
+                cornerRadius: 18
+            )
         )
     }
 }
@@ -355,121 +724,71 @@ struct CompareView: View {
     let productName: String
     let barcode: String
 
-    @State private var salePrices: [String: String] = [:]
-    @State private var shippingCosts: [String: String] = [:]
+    @State private var salePrices:
+        [String: String] = [:]
 
-    @Environment(\.openURL) private var openURL
+    @State private var shippingCosts:
+        [String: String] = [:]
 
-    private let green = Color(
-        red: 32 / 255,
-        green: 177 / 255,
-        blue: 90 / 255
-    )
+    @Environment(\.openURL)
+    private var openURL
 
     var body: some View {
-        ScrollView {
-            VStack(
-                alignment: .leading,
-                spacing: 18
-            ) {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
 
+            ScrollView {
                 VStack(
                     alignment: .leading,
-                    spacing: 5
+                    spacing: 18
                 ) {
-                    Text(productName.isEmpty ? "商品" : productName)
-                        .font(.title2.bold())
+                    Text(
+                        productName.isEmpty
+                        ? "商品"
+                        : productName
+                    )
+                    .font(.title2.bold())
 
                     if !barcode.isEmpty {
-                        Text("JAN/EAN: \(barcode)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(
+                            "JAN / EAN: \(barcode)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                }
 
-                Text(
-                    "各サービスの販売相場を確認し、想定販売価格と送料を入力すると手取り額を自動計算します。"
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-                ForEach(marketplaces) { market in
-                    MarketplaceCard(
-                        market: market,
-                        productName: productName,
-                        salePrice: binding(
-                            for: market.name,
-                            dictionary: $salePrices
-                        ),
-                        shippingCost: binding(
-                            for: market.name,
-                            dictionary: $shippingCosts
-                        ),
-                        onSearch: {
-                            openMarket(
-                                market: market
-                            )
-                        }
+                    Text(
+                        "各サービスの相場を確認して販売価格と送料を入力すると、予想手取り額を計算できます。"
                     )
-                }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-                VStack(
-                    alignment: .leading,
-                    spacing: 10
-                ) {
-                    Text("買取店でも比較")
-                        .font(.title3.bold())
+                    ForEach(marketplaces) {
+                        market in
 
-                    Button {
-                        let query =
-                            productName.isEmpty
-                            ? "買取店"
-                            : "\(productName) 買取"
-
-                        let encoded =
-                            query.addingPercentEncoding(
-                                withAllowedCharacters:
-                                    .urlQueryAllowed
-                            ) ?? ""
-
-                        if let url = URL(
-                            string:
-                            "https://www.google.com/search?q=\(encoded)"
-                        ) {
-                            openURL(url)
-                        }
-                    } label: {
-                        HStack {
-                            Image(
-                                systemName:
-                                    "building.2.fill"
-                            )
-
-                            Text(
-                                "買取店の査定価格を調べる"
-                            )
-                                .font(.headline)
-
-                            Spacer()
-
-                            Image(
-                                systemName:
-                                    "arrow.up.right.square"
-                            )
-                        }
-                        .padding()
-                        .foregroundStyle(.white)
-                        .background(green)
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 14
-                            )
+                        MarketplaceCard(
+                            market: market,
+                            salePrice: binding(
+                                for: market.name,
+                                dictionary:
+                                    $salePrices
+                            ),
+                            shippingCost: binding(
+                                for: market.name,
+                                dictionary:
+                                    $shippingCosts
+                            ),
+                            onSearch: {
+                                openMarket(
+                                    market: market
+                                )
+                            }
                         )
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(16)
             }
-            .padding(16)
         }
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
@@ -480,7 +799,6 @@ struct CompareView: View {
         dictionary:
             Binding<[String: String]>
     ) -> Binding<String> {
-
         Binding(
             get: {
                 dictionary.wrappedValue[key]
@@ -497,9 +815,11 @@ struct CompareView: View {
         market: Marketplace
     ) {
         let keyword =
-            productName.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
+            productName
+                .trimmingCharacters(
+                    in:
+                        .whitespacesAndNewlines
+                )
 
         guard !keyword.isEmpty else {
             return
@@ -524,7 +844,6 @@ struct CompareView: View {
 
 struct MarketplaceCard: View {
     let market: Marketplace
-    let productName: String
 
     @Binding var salePrice: String
     @Binding var shippingCost: String
@@ -533,30 +852,35 @@ struct MarketplaceCard: View {
 
     private var salePriceValue: Double {
         Double(
-            salePrice.replacingOccurrences(
-                of: ",",
-                with: ""
-            )
+            salePrice
+                .replacingOccurrences(
+                    of: ",",
+                    with: ""
+                )
         ) ?? 0
     }
 
     private var shippingValue: Double {
         Double(
-            shippingCost.replacingOccurrences(
-                of: ",",
-                with: ""
-            )
+            shippingCost
+                .replacingOccurrences(
+                    of: ",",
+                    with: ""
+                )
         ) ?? 0
     }
 
     private var fee: Double {
-        salePriceValue * market.feeRate
+        salePriceValue
+        * market.feeRate
     }
 
     private var netAmount: Double {
         max(
             0,
-            salePriceValue - fee - shippingValue
+            salePriceValue
+            - fee
+            - shippingValue
         )
     }
 
@@ -565,7 +889,6 @@ struct MarketplaceCard: View {
             alignment: .leading,
             spacing: 12
         ) {
-
             HStack {
                 Text(market.name)
                     .font(.title3.bold())
@@ -579,24 +902,14 @@ struct MarketplaceCard: View {
                 .foregroundStyle(.secondary)
             }
 
-            Button(action: onSearch) {
-                HStack {
-                    Image(
-                        systemName:
-                            "magnifyingglass"
-                    )
-
-                    Text(
-                        "\(market.name)で相場を見る"
-                    )
-
-                    Spacer()
-
-                    Image(
-                        systemName:
-                            "arrow.up.right.square"
-                    )
-                }
+            Button(
+                action: onSearch
+            ) {
+                Label(
+                    "\(market.name)で相場を見る",
+                    systemImage:
+                        "arrow.up.right.square"
+                )
                 .font(.headline)
             }
             .buttonStyle(.plain)
@@ -612,8 +925,12 @@ struct MarketplaceCard: View {
                     "0",
                     text: $salePrice
                 )
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
+                .keyboardType(
+                    .numberPad
+                )
+                .multilineTextAlignment(
+                    .trailing
+                )
                 .frame(width: 100)
 
                 Text("円")
@@ -628,8 +945,12 @@ struct MarketplaceCard: View {
                     "0",
                     text: $shippingCost
                 )
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
+                .keyboardType(
+                    .numberPad
+                )
+                .multilineTextAlignment(
+                    .trailing
+                )
                 .frame(width: 100)
 
                 Text("円")
@@ -637,9 +958,7 @@ struct MarketplaceCard: View {
 
             HStack {
                 Text("販売手数料")
-
                 Spacer()
-
                 Text(
                     "\(Int(fee.rounded()))円"
                 )
@@ -649,75 +968,135 @@ struct MarketplaceCard: View {
 
             HStack {
                 Text("予想手取り")
-
                 Spacer()
-
                 Text(
                     "\(Int(netAmount.rounded()))円"
                 )
                 .font(.title2.bold())
-                .foregroundStyle(
-                    netAmount > 0
-                    ? .green
-                    : .primary
-                )
+                .foregroundStyle(.green)
             }
         }
         .padding(16)
         .background(
-            Color(.secondarySystemBackground)
+            Color(
+                red: 24 / 255,
+                green: 24 / 255,
+                blue: 26 / 255
+            )
         )
         .clipShape(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(
+                cornerRadius: 18
+            )
         )
     }
 }
 
-struct RecognitionResult {
-    let text: String
-    let barcode: String
-    let productCandidate: String
+enum GoogleVisionAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func analyze(
+        image: UIImage
+    ) async -> GoogleVisionResponse? {
+
+        guard let url =
+                URL(string: endpoint),
+              let imageData =
+                image.jpegData(
+                    compressionQuality: 0.72
+                ) else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "imageBase64":
+                imageData
+                    .base64EncodedString()
+        ]
+
+        guard let jsonData =
+                try? JSONSerialization
+                    .data(
+                        withJSONObject: body
+                    ) else {
+            return nil
+        }
+
+        var request =
+            URLRequest(url: url)
+
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField:
+                "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 30
+
+        do {
+            let (data, response) =
+                try await URLSession
+                    .shared
+                    .data(
+                        for: request
+                    )
+
+            guard let http =
+                    response
+                    as? HTTPURLResponse,
+                  200...299 ~= http.statusCode else {
+                return nil
+            }
+
+            return try JSONDecoder()
+                .decode(
+                    GoogleVisionResponse.self,
+                    from: data
+                )
+        } catch {
+            return nil
+        }
+    }
 }
 
-enum ProductRecognizer {
-
+enum LocalProductRecognizer {
     static func recognize(
         image: UIImage
-    ) async -> RecognitionResult {
+    ) async -> LocalRecognitionResult {
 
-        guard let cgImage = image.cgImage else {
-            return RecognitionResult(
+        guard let cgImage =
+                image.cgImage else {
+            return LocalRecognitionResult(
                 text: "",
                 barcode: "",
                 productCandidate: ""
             )
         }
 
-        async let textResult =
+        async let textTask =
             recognizeText(cgImage)
 
-        async let barcodeResult =
+        async let barcodeTask =
             recognizeBarcode(cgImage)
 
-        let text = await textResult
-        let barcode = await barcodeResult
+        let text = await textTask
+        let barcode = await barcodeTask
 
-        let candidate =
-            makeProductCandidate(
-                from: text
-            )
-
-        return RecognitionResult(
+        return LocalRecognitionResult(
             text: text,
             barcode: barcode,
-            productCandidate: candidate
+            productCandidate:
+                makeCandidate(
+                    from: text
+                )
         )
     }
 
     private static func recognizeText(
         _ cgImage: CGImage
     ) async -> String {
-
         await withCheckedContinuation {
             continuation in
 
@@ -735,15 +1114,19 @@ enum ProductRecognizer {
 
                     let observations =
                         request.results
-                        as? [VNRecognizedTextObservation]
+                        as? [
+                            VNRecognizedTextObservation
+                        ]
                         ?? []
 
                     let lines =
-                        observations.compactMap {
-                            $0.topCandidates(1)
-                                .first?
-                                .string
-                        }
+                        observations
+                            .compactMap {
+                                $0
+                                    .topCandidates(1)
+                                    .first?
+                                    .string
+                            }
 
                     continuation.resume(
                         returning:
@@ -756,13 +1139,15 @@ enum ProductRecognizer {
             request.recognitionLevel =
                 .accurate
 
-            request.usesLanguageCorrection =
+            request
+                .usesLanguageCorrection =
                 true
 
-            request.recognitionLanguages = [
-                "ja-JP",
-                "en-US"
-            ]
+            request
+                .recognitionLanguages = [
+                    "ja-JP",
+                    "en-US"
+                ]
 
             let handler =
                 VNImageRequestHandler(
@@ -771,7 +1156,8 @@ enum ProductRecognizer {
 
             DispatchQueue.global(
                 qos: .userInitiated
-            ).async {
+            )
+            .async {
                 do {
                     try handler.perform(
                         [request]
@@ -788,7 +1174,6 @@ enum ProductRecognizer {
     private static func recognizeBarcode(
         _ cgImage: CGImage
     ) async -> String {
-
         await withCheckedContinuation {
             continuation in
 
@@ -806,15 +1191,18 @@ enum ProductRecognizer {
 
                     let observations =
                         request.results
-                        as? [VNBarcodeObservation]
+                        as? [
+                            VNBarcodeObservation
+                        ]
                         ?? []
 
                     let barcode =
                         observations
-                        .compactMap {
-                            $0.payloadStringValue
-                        }
-                        .first
+                            .compactMap {
+                                $0
+                                    .payloadStringValue
+                            }
+                            .first
                         ?? ""
 
                     continuation.resume(
@@ -829,7 +1217,8 @@ enum ProductRecognizer {
 
             DispatchQueue.global(
                 qos: .userInitiated
-            ).async {
+            )
+            .async {
                 do {
                     try handler.perform(
                         [request]
@@ -843,62 +1232,35 @@ enum ProductRecognizer {
         }
     }
 
-    private static func makeProductCandidate(
+    private static func makeCandidate(
         from text: String
     ) -> String {
-
         let lines =
-            text.components(
-                separatedBy: .newlines
-            )
-            .map {
-                $0.trimmingCharacters(
-                    in: .whitespacesAndNewlines
+            text
+                .components(
+                    separatedBy:
+                        .newlines
                 )
-            }
-            .filter {
-                !$0.isEmpty
-            }
+                .map {
+                    $0
+                        .trimmingCharacters(
+                            in:
+                                .whitespacesAndNewlines
+                        )
+                }
+                .filter {
+                    !$0.isEmpty
+                }
 
         guard !lines.isEmpty else {
             return ""
         }
 
-        let modelLines =
-            lines.filter {
-                line in
-
-                let hasLetter =
-                    line.rangeOfCharacter(
-                        from: .letters
-                    ) != nil
-
-                let hasNumber =
-                    line.rangeOfCharacter(
-                        from: .decimalDigits
-                    ) != nil
-
-                return hasLetter
-                    && hasNumber
-                    && line.count <= 40
-            }
-
-        if let model =
-            modelLines.first {
-
-            if let brand =
-                lines.first,
-               brand != model {
-
-                return "\(brand) \(model)"
-            }
-
-            return model
-        }
-
         return lines
             .prefix(2)
-            .joined(separator: " ")
+            .joined(
+                separator: " "
+            )
     }
 }
 
@@ -906,10 +1268,10 @@ struct CameraPicker:
     UIViewControllerRepresentable {
 
     @Binding var image: UIImage?
-
     let onFinish: () -> Void
 
-    func makeCoordinator() -> Coordinator {
+    func makeCoordinator()
+        -> Coordinator {
         Coordinator(self)
     }
 
@@ -922,7 +1284,9 @@ struct CameraPicker:
 
         picker.sourceType =
             UIImagePickerController
-                .isSourceTypeAvailable(.camera)
+                .isSourceTypeAvailable(
+                    .camera
+                )
             ? .camera
             : .photoLibrary
 
@@ -945,7 +1309,9 @@ struct CameraPicker:
 
         let parent: CameraPicker
 
-        init(_ parent: CameraPicker) {
+        init(
+            _ parent: CameraPicker
+        ) {
             self.parent = parent
         }
 
@@ -959,8 +1325,9 @@ struct CameraPicker:
                 ]
         ) {
             parent.image =
-                info[.originalImage]
-                as? UIImage
+                info[
+                    .originalImage
+                ] as? UIImage
 
             parent.onFinish()
         }
