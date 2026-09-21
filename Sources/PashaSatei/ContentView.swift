@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
-import Vision
+@preconcurrency import Vision
 
 enum AppRoute: Hashable {
     case result
