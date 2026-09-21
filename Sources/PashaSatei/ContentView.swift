@@ -1188,7 +1188,7 @@ struct CompareView: View {
                         )
                     )
 
-                    ForEach(marketplaces) { market in
+                    ForEach(marketplaces.filter { $0.name == "楽天ラクマ" }) { market in
                         MarketplaceCard(
                             market: market,
                             salePrice: binding(
