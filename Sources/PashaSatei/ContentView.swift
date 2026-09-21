@@ -134,7 +134,8 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             HomeView(
                 selectedPhoto: $selectedPhoto,
-                showCamera: $showCamera
+                showCamera: $showCamera,
+                capturedImages: $capturedImages
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
@@ -355,6 +356,7 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
+    @Binding var capturedImages: [UIImage]
 
     private let green = Color(
         red: 39 / 255,
