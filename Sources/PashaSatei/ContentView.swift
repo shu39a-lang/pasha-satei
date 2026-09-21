@@ -56,6 +56,7 @@ struct YahooPriceItem: Codable, Identifiable {
     let imageUrl: String?
     let seller: String?
     let condition: String?
+    let capacity: String?
 
     var id: String {
         url.isEmpty
@@ -184,16 +185,19 @@ struct ContentView: View {
         evidence = []
         candidates = []
 
-        async let localTask =
-            LocalProductRecognizer.recognize(image: image)
-
-        async let geminiTask =
-            GeminiProductAPI.analyze(image: image)
-
-        let local = await localTask
-        let gemini = await geminiTask
+        let local =
+            await LocalProductRecognizer.recognize(
+                image: image
+            )
 
         detectedBarcode = local.barcode
+
+        let gemini =
+            await GeminiProductAPI.analyze(
+                image: image,
+                ocrText: local.text,
+                barcode: local.barcode
+            )
 
         if let gemini, gemini.ok {
             let displayName =
@@ -1342,6 +1346,35 @@ struct UsedPriceCard: View {
                                                 )
                                                 .lineLimit(2)
 
+                                            let details = [
+                                                item.capacity?
+                                                    .trimmingCharacters(
+                                                        in: .whitespacesAndNewlines
+                                                    ),
+                                                item.condition?
+                                                    .trimmingCharacters(
+                                                        in: .whitespacesAndNewlines
+                                                    )
+                                            ]
+                                            .compactMap { value in
+                                                guard let value,
+                                                      !value.isEmpty
+                                                else {
+                                                    return nil
+                                                }
+                                                return value
+                                            }
+
+                                            if !details.isEmpty {
+                                                Text(
+                                                    details.joined(
+                                                        separator: " ｜ "
+                                                    )
+                                                )
+                                                .font(.caption.bold())
+                                                .foregroundStyle(green)
+                                            }
+
                                             if let seller =
                                                 item.seller,
                                                !seller.isEmpty {
@@ -1838,7 +1871,9 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     static func analyze(
-        image: UIImage
+        image: UIImage,
+        ocrText: String,
+        barcode: String
     ) async -> GeminiProductResponse? {
 
         guard let url =
@@ -1853,7 +1888,9 @@ enum GeminiProductAPI {
         let body: [String: Any] = [
             "imageBase64":
                 imageData
-                    .base64EncodedString()
+                    .base64EncodedString(),
+            "ocrText": ocrText,
+            "barcode": barcode
         ]
 
         guard let jsonData =
