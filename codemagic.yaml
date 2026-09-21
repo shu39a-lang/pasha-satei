@@ -63,7 +63,7 @@ workflows:
           test -n "$APP_PATH"
 
           codesign -dv --verbose=4 "$APP_PATH" 2>&1 | tee /tmp/pasha-signature.txt
-
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
           if ! grep -Eq "Authority=(Apple Distribution|iPhone Distribution)" /tmp/pasha-signature.txt; then
             echo "ERROR: App is not signed with an Apple distribution certificate."
             exit 1
