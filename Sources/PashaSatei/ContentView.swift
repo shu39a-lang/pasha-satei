@@ -115,7 +115,6 @@ struct LocalRecognitionResult {
 struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var selectedImage: UIImage?
-    @State private var capturedImages: [UIImage] = []
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
 
@@ -134,8 +133,7 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             HomeView(
                 selectedPhoto: $selectedPhoto,
-                showCamera: $showCamera,
-                capturedImages: $capturedImages
+                showCamera: $showCamera
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
@@ -169,22 +167,14 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showCamera) {
     CameraPicker(
         onImage: { image in
+            selectedImage = image
             showCamera = false
-            capturedImages.append(image)
 
-            if capturedImages.count == 1 {
-                selectedImage = image
-            }
-
-            if capturedImages.count >= 3 {
-                let images = capturedImages
-                capturedImages = []
-                Task { @MainActor in
-                    isRecognizing = true
-                    path.append(.result)
-                    await Task.yield()
-                    await recognize(images: images)
-                }
+            Task { @MainActor in
+                isRecognizing = true
+                path.append(.result)
+                await Task.yield()
+                await recognize(image: image)
             }
         },
         onCancel: {
@@ -206,13 +196,13 @@ struct ContentView: View {
                 isRecognizing = true
                 path.append(.result)
                 await Task.yield()
-                await recognize(images: [image])
+                await recognize(image: image)
             }
         }
     }
 
     @MainActor
-    private func recognize(images: [UIImage]) async {
+    private func recognize(image: UIImage) async {
         isRecognizing = true
 
         productName = ""
@@ -225,39 +215,18 @@ struct ContentView: View {
         evidence = []
         candidates = []
 
-        guard !images.isEmpty else {
-            isRecognizing = false
-            return
-        }
+        let local =
+            await LocalProductRecognizer.recognize(
+                image: image
+            )
 
-        var allText: [String] = []
-        var barcode = ""
-
-        for image in images {
-            let local =
-                await LocalProductRecognizer.recognize(
-                    image: image
-                )
-
-            if !local.text.isEmpty {
-                allText.append(local.text)
-            }
-
-            if barcode.isEmpty,
-               !local.barcode.isEmpty {
-                barcode = local.barcode
-            }
-        }
-
-        detectedBarcode = barcode
+        detectedBarcode = local.barcode
 
         let gemini =
             await GeminiProductAPI.analyze(
-                images: images,
-                ocrText: allText.joined(
-                    separator: "\n---別角度---\n"
-                ),
-                barcode: barcode
+                image: image,
+                ocrText: local.text,
+                barcode: local.barcode
             )
 
         if let gemini, gemini.ok {
@@ -317,10 +286,10 @@ struct ContentView: View {
 
             if detectedBarcode.isEmpty {
                 recognitionSource =
-                    "Gemini 3画像統合認識 + OCR補助"
+                    "Gemini画像認識 + OCR補助"
             } else {
                 recognitionSource =
-                    "Gemini 3画像統合認識 + JAN/EAN照合 + OCR補助"
+                    "JAN/EAN優先照合 + AI画像認識"
             }
         } else {
             recognitionSource =
@@ -329,8 +298,7 @@ struct ContentView: View {
                 : "JAN/EAN + 画像文字認識"
 
             let lines =
-                allText
-                    .joined(separator: "\n")
+                local.text
                     .components(separatedBy: .newlines)
                     .map {
                         $0.trimmingCharacters(
@@ -351,7 +319,6 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
-    @Binding var capturedImages: [UIImage]
 
     private let green = Color(
         red: 39 / 255,
@@ -418,11 +385,11 @@ struct HomeView: View {
                             .foregroundStyle(green)
                         }
 
-                        Text("3方向から撮ってAI判定")
+                        Text("1枚の写真で商品をAI判定")
                             .font(.title2.bold())
 
                         Text(
-                            "正面・背面・側面の3枚をまとめて確認し、写真1枚による判定のブレを減らします。"
+                            "バーコードが写っていれば最優先で照合。無い場合は写真・文字・形状から商品を絞り込みます。"
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -502,19 +469,10 @@ struct HomeView: View {
                     }
 
                     Button {
-                        if capturedImages.count >= 3 {
-                            capturedImages = []
-                        }
                         showCamera = true
                     } label: {
                         Label(
-                            capturedImages.isEmpty
-                            ? "1枚目：正面を撮影"
-                            : (
-                                capturedImages.count == 1
-                                ? "2枚目：背面を撮影"
-                                : "3枚目：側面を撮影"
-                            ),
+                            "カメラで撮影",
                             systemImage: "camera.fill"
                         )
                         .font(.title3.bold())
@@ -529,14 +487,6 @@ struct HomeView: View {
                             cornerRadius: 18
                         )
                     )
-
-                    if !capturedImages.isEmpty {
-                        Text(
-                            "撮影済み \(capturedImages.count) / 3枚"
-                        )
-                        .font(.subheadline.bold())
-                        .foregroundStyle(green)
-                    }
 
                     PhotosPicker(
                         selection: $selectedPhoto,
@@ -863,7 +813,7 @@ struct ResultView: View {
                             alignment: .leading,
                             spacing: 10
                         ) {
-                            Text("その他の候補")
+                            Text("近い候補から選ぶ")
                                 .font(.headline)
 
                             ForEach(
@@ -1928,33 +1878,24 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     static func analyze(
-        images: [UIImage],
+        image: UIImage,
         ocrText: String,
         barcode: String
     ) async -> GeminiProductResponse? {
 
         guard let url =
-                URL(string: endpoint)
-        else {
-            return nil
-        }
-
-        let imageStrings =
-            images.prefix(3).compactMap {
-                image in
-
+                URL(string: endpoint),
+              let imageData =
                 image.jpegData(
-                    compressionQuality: 0.72
-                )?
-                .base64EncodedString()
-            }
-
-        guard !imageStrings.isEmpty else {
+                    compressionQuality: 0.78
+                ) else {
             return nil
         }
 
         let body: [String: Any] = [
-            "imagesBase64": imageStrings,
+            "imageBase64":
+                imageData
+                    .base64EncodedString(),
             "ocrText": ocrText,
             "barcode": barcode
         ]
