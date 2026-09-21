@@ -48,6 +48,34 @@ struct GeminiProductResponse: Codable {
     let error: String?
 }
 
+
+struct YahooPriceItem: Codable, Identifiable {
+    let name: String
+    let price: Int
+    let url: String
+    let imageUrl: String?
+    let seller: String?
+    let condition: String?
+
+    var id: String {
+        url.isEmpty
+        ? "\(name)-\(price)"
+        : url
+    }
+}
+
+struct YahooPriceResponse: Codable {
+    let ok: Bool
+    let source: String?
+    let query: String?
+    let count: Int
+    let minPrice: Int
+    let medianPrice: Int
+    let maxPrice: Int
+    let items: [YahooPriceItem]
+    let error: String?
+}
+
 struct LocalRecognitionResult {
     let text: String
     let barcode: String
@@ -881,6 +909,15 @@ struct CompareView: View {
     @State private var shippingCosts:
         [String: String] = [:]
 
+    @State private var yahooPrice:
+        YahooPriceResponse?
+
+    @State private var isLoadingYahoo =
+        false
+
+    @State private var yahooError =
+        ""
+
     @Environment(\.openURL)
     private var openURL
 
@@ -920,12 +957,23 @@ struct CompareView: View {
                         }
                     }
 
+                    YahooUsedPriceCard(
+                        data: yahooPrice,
+                        isLoading: isLoadingYahoo,
+                        errorText: yahooError,
+                        onRetry: {
+                            Task {
+                                await loadYahooPrice()
+                            }
+                        }
+                    )
+
                     VStack(
                         alignment: .leading,
                         spacing: 10
                     ) {
                         Label(
-                            "販売先ごとの相場を比較",
+                            "販売先ごとの手取りを比較",
                             systemImage:
                                 "chart.bar.doc.horizontal.fill"
                         )
@@ -933,15 +981,9 @@ struct CompareView: View {
                         .foregroundStyle(green)
 
                         Text(
-                            "各サービスの検索結果を開き、相場を確認して販売価格と送料を入力すると、手取り額を自動計算します。"
+                            "下の販売先は、相場を確認して販売価格と送料を入力すると、手取り額を自動計算します。"
                         )
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                        Text(
-                            "次の段階で、取得可能なサービスから価格の自動表示を追加します。"
-                        )
-                        .font(.caption)
                         .foregroundStyle(.secondary)
                     }
                     .padding(16)
@@ -989,6 +1031,44 @@ struct CompareView: View {
         }
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: productName) {
+            await loadYahooPrice()
+        }
+    }
+
+    @MainActor
+    private func loadYahooPrice() async {
+        guard !productName
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty
+        else {
+            return
+        }
+
+        isLoadingYahoo = true
+        yahooError = ""
+
+        let result =
+            await YahooPriceAPI.fetch(
+                productName: productName,
+                barcode: barcode
+            )
+
+        if let result, result.ok {
+            yahooPrice = result
+        } else {
+            yahooPrice = result
+            yahooError =
+                result?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "Yahoo!中古価格を取得できませんでした。"
+        }
+
+        isLoadingYahoo = false
     }
 
     private var bestMarketName:
@@ -1098,6 +1178,254 @@ struct CompareView: View {
             ) {
             openURL(url)
         }
+    }
+}
+
+struct YahooUsedPriceCard: View {
+    let data: YahooPriceResponse?
+    let isLoading: Bool
+    let errorText: String
+    let onRetry: () -> Void
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 14
+        ) {
+            HStack {
+                Label(
+                    "Yahoo!ショッピング 中古相場",
+                    systemImage:
+                        "cart.fill"
+                )
+                .font(.headline)
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .tint(green)
+                }
+            }
+
+            if isLoading {
+                Text(
+                    "中古価格を取得しています…"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            } else if let data, data.ok {
+                if data.count > 0 {
+                    HStack(spacing: 10) {
+                        PriceStat(
+                            title: "最安値",
+                            value: data.minPrice
+                        )
+
+                        PriceStat(
+                            title: "中央値",
+                            value: data.medianPrice
+                        )
+
+                        PriceStat(
+                            title: "最高値",
+                            value: data.maxPrice
+                        )
+                    }
+
+                    Text(
+                        "中古 \(data.count)件を取得"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    if !data.items.isEmpty {
+                        Divider()
+
+                        Text("商品例")
+                            .font(.subheadline.bold())
+
+                        ForEach(
+                            data.items.prefix(3)
+                        ) { item in
+                            if let url =
+                                URL(
+                                    string:
+                                        item.url
+                                ) {
+                                Link(
+                                    destination: url
+                                ) {
+                                    HStack(
+                                        alignment: .top,
+                                        spacing: 10
+                                    ) {
+                                        VStack(
+                                            alignment: .leading,
+                                            spacing: 4
+                                        ) {
+                                            Text(item.name)
+                                                .font(
+                                                    .subheadline
+                                                )
+                                                .lineLimit(2)
+
+                                            if let seller =
+                                                item.seller,
+                                               !seller.isEmpty {
+                                                Text(seller)
+                                                    .font(
+                                                        .caption2
+                                                    )
+                                                    .foregroundStyle(
+                                                        .secondary
+                                                    )
+                                            }
+                                        }
+
+                                        Spacer()
+
+                                        Text(
+                                            "\(item.price.formatted())円"
+                                        )
+                                        .font(
+                                            .headline
+                                        )
+                                        .foregroundStyle(
+                                            green
+                                        )
+                                    }
+                                    .padding(10)
+                                    .background(
+                                        Color.white
+                                            .opacity(
+                                                0.05
+                                            )
+                                    )
+                                    .clipShape(
+                                        RoundedRectangle(
+                                            cornerRadius:
+                                                10
+                                        )
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                } else {
+                    Text(
+                        "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                    Button(
+                        action: onRetry
+                    ) {
+                        Label(
+                            "もう一度検索",
+                            systemImage:
+                                "arrow.clockwise"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(green)
+                }
+
+            } else {
+                Text(
+                    errorText.isEmpty
+                    ? "中古価格を取得できませんでした。"
+                    : errorText
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+                Button(
+                    action: onRetry
+                ) {
+                    Label(
+                        "もう一度検索",
+                        systemImage:
+                            "arrow.clockwise"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(green)
+            }
+        }
+        .padding(16)
+        .background(
+            Color(
+                red: 24 / 255,
+                green: 24 / 255,
+                blue: 26 / 255
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+            .stroke(
+                green.opacity(0.35),
+                lineWidth: 1
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+        )
+    }
+}
+
+struct PriceStat: View {
+    let title: String
+    let value: Int
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 4
+        ) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(
+                "\(value.formatted())円"
+            )
+            .font(.subheadline.bold())
+            .foregroundStyle(green)
+        }
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+        .padding(10)
+        .background(
+            Color.white.opacity(0.05)
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 10
+            )
+        )
     }
 }
 
@@ -1297,6 +1625,77 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
+    }
+}
+
+enum YahooPriceAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(
+        productName: String,
+        barcode: String
+    ) async -> YahooPriceResponse? {
+
+        guard let url =
+                URL(string: endpoint)
+        else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "action": "yahooUsedPrice",
+            "productName": productName,
+            "barcode": barcode
+        ]
+
+        guard let jsonData =
+                try? JSONSerialization
+                    .data(
+                        withJSONObject: body
+                    )
+        else {
+            return nil
+        }
+
+        var request =
+            URLRequest(url: url)
+
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField:
+                "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 20
+
+        do {
+            let (data, response) =
+                try await URLSession
+                    .shared
+                    .data(
+                        for: request
+                    )
+
+            guard let http =
+                    response
+                    as? HTTPURLResponse,
+                  200...299 ~=
+                    http.statusCode
+            else {
+                return nil
+            }
+
+            return try JSONDecoder()
+                .decode(
+                    YahooPriceResponse.self,
+                    from: data
+                )
+
+        } catch {
+            return nil
+        }
     }
 }
 
