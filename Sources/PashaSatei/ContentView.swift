@@ -1,7 +1,6 @@
-.fullScreenCover(isPresented: $showCamera) {
-    CameraPicker(image: $selectedImage) {
-        showCamera = false
-
+.fullScreenCover(
+    isPresented: $showCamera,
+    onDismiss: {
         guard let image = selectedImage else {
             return
         }
@@ -11,5 +10,12 @@
             path.append(.result)
         }
     }
+) {
+    CameraPicker(
+        image: $selectedImage,
+        onFinish: {
+            showCamera = false
+        }
+    )
     .ignoresSafeArea()
 }
