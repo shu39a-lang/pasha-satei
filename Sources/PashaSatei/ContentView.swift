@@ -105,22 +105,18 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .fullScreenCover(
-    isPresented: $showCamera,
-    onDismiss: {
-        guard let image = selectedImage else {
-            return
-        }
-
-        Task {
-            await recognize(image: image)
-            path.append(.result)
-        }
-    }
-) {
+        .fullScreenCover(isPresented: $showCamera) {
     CameraPicker(
-        image: $selectedImage,
-        onFinish: {
+        onImage: { image in
+            selectedImage = image
+            showCamera = false
+
+            Task {
+                await recognize(image: image)
+                path.append(.result)
+            }
+        },
+        onCancel: {
             showCamera = false
         }
     )
