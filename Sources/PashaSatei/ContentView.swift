@@ -105,21 +105,27 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(image: $selectedImage) {
-                showCamera = false
-
-                guard let image = selectedImage else {
-                    return
-                }
-
-                Task {
-                    await recognize(image: image)
-                    path.append(.result)
-                }
-            }
-            .ignoresSafeArea()
+        .fullScreenCover(
+    isPresented: $showCamera,
+    onDismiss: {
+        guard let image = selectedImage else {
+            return
         }
+
+        Task {
+            await recognize(image: image)
+            path.append(.result)
+        }
+    }
+) {
+    CameraPicker(
+        image: $selectedImage,
+        onFinish: {
+            showCamera = false
+        }
+    )
+    .ignoresSafeArea()
+}
         .onChange(of: selectedPhoto) { newItem in
             Task {
                 guard let newItem,
