@@ -10,7 +10,7 @@ workflows:
     environment:
       ios_signing:
         provisioning_profiles:
-          - Pasha_Satei_AppStore_New
+          - Pasha_Satei_AppStore
         certificates:
           - Pasha_Satei_Distribution
       xcode: latest
