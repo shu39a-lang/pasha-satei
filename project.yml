@@ -1,4 +1,5 @@
 name: PashaSatei
+
 options:
   bundleIdPrefix: com.shu39a
   deploymentTarget:
@@ -15,10 +16,11 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "16.0"
+
     sources:
-      - Sources/PashaSatei
-    resources:
-      - Resources
+      - path: Sources/PashaSatei
+      - path: Resources/Assets.xcassets
+
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shu39a.pashasatei
@@ -28,5 +30,6 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
+
     scheme:
       testTargets: []
