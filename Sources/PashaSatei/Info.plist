@@ -2,22 +2,48 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+
     <key>CFBundleDisplayName</key>
     <string>パシャ査定</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
     <key>CFBundleName</key>
-    <string>パシャ査定</string>
+    <string>$(PRODUCT_NAME)</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
     <key>CFBundleShortVersionString</key>
     <string>$(MARKETING_VERSION)</string>
+
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+
     <key>UILaunchScreen</key>
     <dict/>
+
     <key>NSCameraUsageDescription</key>
     <string>商品の写真を撮影して査定候補を表示するためにカメラを使用します。</string>
+
     <key>NSPhotoLibraryUsageDescription</key>
     <string>商品の写真を選択して査定候補を表示するために写真ライブラリを使用します。</string>
+
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>必要に応じて撮影した商品の写真を保存するために写真ライブラリを使用します。</string>
+
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
