@@ -593,6 +593,12 @@ struct ResultView: View {
                             )
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                            Text(
+                                "検索状況により10〜30秒ほどかかる場合があります"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
@@ -878,6 +884,12 @@ struct CompareView: View {
     @Environment(\.openURL)
     private var openURL
 
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
     var body: some View {
         ZStack {
             Color.black
@@ -888,26 +900,63 @@ struct CompareView: View {
                     alignment: .leading,
                     spacing: 18
                 ) {
-                    Text(
-                        productName.isEmpty
-                        ? "商品"
-                        : productName
-                    )
-                    .font(.title2.bold())
-
-                    if !barcode.isEmpty {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
                         Text(
-                            "JAN / EAN: \(barcode)"
+                            productName.isEmpty
+                            ? "商品"
+                            : productName
+                        )
+                        .font(.title2.bold())
+
+                        if !barcode.isEmpty {
+                            Text(
+                                "JAN / EAN: \(barcode)"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(
+                        alignment: .leading,
+                        spacing: 10
+                    ) {
+                        Label(
+                            "販売先ごとの相場を比較",
+                            systemImage:
+                                "chart.bar.doc.horizontal.fill"
+                        )
+                        .font(.headline)
+                        .foregroundStyle(green)
+
+                        Text(
+                            "各サービスの検索結果を開き、相場を確認して販売価格と送料を入力すると、手取り額を自動計算します。"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                        Text(
+                            "次の段階で、取得可能なサービスから価格の自動表示を追加します。"
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
-
-                    Text(
-                        "各サービスの相場を確認して、販売価格と送料を入力すると予想手取り額を計算できます。"
+                    .padding(16)
+                    .background(
+                        Color(
+                            red: 24 / 255,
+                            green: 24 / 255,
+                            blue: 26 / 255
+                        )
                     )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 18
+                        )
+                    )
 
                     ForEach(marketplaces) {
                         market in
@@ -924,6 +973,9 @@ struct CompareView: View {
                                 dictionary:
                                     $shippingCosts
                             ),
+                            isBest:
+                                bestMarketName
+                                == market.name,
                             onSearch: {
                                 openMarket(
                                     market: market
@@ -937,6 +989,68 @@ struct CompareView: View {
         }
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var bestMarketName:
+        String? {
+
+        marketplaces
+            .map {
+                (
+                    $0.name,
+                    netAmount(
+                        for: $0
+                    )
+                )
+            }
+            .filter {
+                $0.1 > 0
+            }
+            .max {
+                $0.1 < $1.1
+            }?
+            .0
+    }
+
+    private func numericValue(
+        _ text: String
+    ) -> Double {
+        Double(
+            text
+                .replacingOccurrences(
+                    of: ",",
+                    with: ""
+                )
+        ) ?? 0
+    }
+
+    private func netAmount(
+        for market: Marketplace
+    ) -> Double {
+
+        let price =
+            numericValue(
+                salePrices[
+                    market.name
+                ] ?? ""
+            )
+
+        let shipping =
+            numericValue(
+                shippingCosts[
+                    market.name
+                ] ?? ""
+            )
+
+        return max(
+            0,
+            price
+            - (
+                price
+                * market.feeRate
+            )
+            - shipping
+        )
     }
 
     private func binding(
@@ -993,7 +1107,14 @@ struct MarketplaceCard: View {
     @Binding var salePrice: String
     @Binding var shippingCost: String
 
+    let isBest: Bool
     let onSearch: () -> Void
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
 
     private var salePriceValue: Double {
         Double(
@@ -1040,22 +1161,57 @@ struct MarketplaceCard: View {
 
                 Spacer()
 
-                Text(
-                    "手数料 約\(Int(market.feeRate * 100))%"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if isBest {
+                    Text("現在の最高手取り")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.black)
+                        .padding(
+                            .horizontal,
+                            9
+                        )
+                        .padding(
+                            .vertical,
+                            5
+                        )
+                        .background(green)
+                        .clipShape(Capsule())
+                } else {
+                    Text(
+                        "手数料 約\(Int(market.feeRate * 100))%"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
 
             Button(
                 action: onSearch
             ) {
-                Label(
-                    "\(market.name)で相場を見る",
-                    systemImage:
-                        "arrow.up.right.square"
+                HStack {
+                    Label(
+                        "\(market.name)で相場を見る",
+                        systemImage:
+                            "arrow.up.right.square"
+                    )
+                    .font(.headline)
+
+                    Spacer()
+
+                    Image(
+                        systemName:
+                            "chevron.right"
+                    )
+                }
+                .foregroundStyle(green)
+                .padding(12)
+                .background(
+                    green.opacity(0.10)
                 )
-                .font(.headline)
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 12
+                    )
+                )
             }
             .buttonStyle(.plain)
 
@@ -1114,7 +1270,7 @@ struct MarketplaceCard: View {
                     "\(Int(netAmount.rounded()))円"
                 )
                 .font(.title2.bold())
-                .foregroundStyle(.green)
+                .foregroundStyle(green)
             }
         }
         .padding(16)
@@ -1123,6 +1279,17 @@ struct MarketplaceCard: View {
                 red: 24 / 255,
                 green: 24 / 255,
                 blue: 26 / 255
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+            .stroke(
+                isBest
+                ? green.opacity(0.65)
+                : Color.clear,
+                lineWidth: 1
             )
         )
         .clipShape(
