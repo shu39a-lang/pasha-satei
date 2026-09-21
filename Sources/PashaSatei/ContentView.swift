@@ -2,24 +2,6 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-struct ProductEstimate {
-    let name: String
-    let detail: String
-    let newPrice: String
-    let usedPrice: String
-    let buyPrice: String
-    let confidence: Int
-}
-
-private let sampleEstimate = ProductEstimate(
-    name: "ワイヤレスヘッドホン ZX-500",
-    detail: "ヘッドホン / サンプル商品",
-    newPrice: "18,800円",
-    usedPrice: "11,500円",
-    buyPrice: "7,000〜9,000円",
-    confidence: 92
-)
-
 enum AppRoute: Hashable {
     case result
     case sell
@@ -30,15 +12,16 @@ struct ContentView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
+    @State private var productName = ""
 
     var body: some View {
         NavigationStack(path: $path) {
             HomeView(
-                selectedImage: $selectedImage,
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
                 onSample: {
                     selectedImage = nil
+                    productName = "ワイヤレスヘッドホン"
                     path.append(.result)
                 }
             )
@@ -47,18 +30,23 @@ struct ContentView: View {
                 case .result:
                     ResultView(
                         image: selectedImage,
-                        estimate: sampleEstimate,
-                        onSell: { path.append(.sell) }
+                        productName: $productName,
+                        onSell: {
+                            path.append(.sell)
+                        }
                     )
+
                 case .sell:
-                    SellOptionsView()
+                    SellOptionsView(productName: productName)
                 }
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $selectedImage) {
                 showCamera = false
+
                 if selectedImage != nil {
+                    productName = ""
                     path.append(.result)
                 }
             }
@@ -68,10 +56,13 @@ struct ContentView: View {
             Task {
                 guard let newItem,
                       let data = try? await newItem.loadTransferable(type: Data.self),
-                      let image = UIImage(data: data) else { return }
+                      let image = UIImage(data: data) else {
+                    return
+                }
 
                 await MainActor.run {
                     selectedImage = image
+                    productName = ""
                     path.append(.result)
                 }
             }
@@ -80,49 +71,49 @@ struct ContentView: View {
 }
 
 struct HomeView: View {
-    @Binding var selectedImage: UIImage?
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
 
     let onSample: () -> Void
 
-    private let green = Color(red: 32/255, green: 177/255, blue: 90/255)
+    private let green = Color(
+        red: 32 / 255,
+        green: 177 / 255,
+        blue: 90 / 255
+    )
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                HStack(alignment: .top) {
+
+                HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("パシャ査定")
                             .font(.system(size: 34, weight: .bold))
 
-                        Text("撮るだけで、モノの価値がわかる")
+                        Text("撮って、調べて、売る場所まで比較")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer()
-
-                    Image(systemName: "bell")
-                        .font(.title2)
-                        .padding(.top, 4)
                 }
 
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 64, weight: .regular))
+                        .font(.system(size: 64))
                         .foregroundStyle(green)
 
-                    Text("商品の写真を1枚撮るだけ")
+                    Text("商品の写真を撮影")
                         .font(.title3.bold())
 
-                    Text("販売相場・推定買取価格・売却先候補を\nわかりやすく表示します")
+                    Text("写真を撮るか、iPhoneに保存されている写真を選んでください。")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
-                        .lineSpacing(4)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
+                .padding(.horizontal, 15)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 24))
 
@@ -139,7 +130,10 @@ struct HomeView: View {
                 .background(green)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
 
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                PhotosPicker(
+                    selection: $selectedPhoto,
+                    matching: .images
+                ) {
                     Label("写真を選ぶ", systemImage: "photo")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
@@ -156,25 +150,9 @@ struct HomeView: View {
                 Button("サンプルで試す", action: onSample)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 5)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("現在は試作版です", systemImage: "info.circle")
-                        .font(.headline)
-
-                    Text("第1版では画面と操作の確認を行います。商品認識・価格情報・店舗情報は次段階で実データに接続します。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(3)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.vertical, 6)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 30)
+            .padding(16)
         }
         .background(Color.white)
         .navigationBarHidden(true)
@@ -183,16 +161,23 @@ struct HomeView: View {
 
 struct ResultView: View {
     let image: UIImage?
-    let estimate: ProductEstimate
+
+    @Binding var productName: String
+
     let onSell: () -> Void
 
-    @State private var condition = "良品"
+    @Environment(\.openURL) private var openURL
 
-    private let green = Color(red: 32/255, green: 177/255, blue: 90/255)
+    private let green = Color(
+        red: 32 / 255,
+        green: 177 / 255,
+        blue: 90 / 255
+    )
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+
                 Group {
                     if let image {
                         Image(uiImage: image)
@@ -204,247 +189,317 @@ struct ResultView: View {
                         ZStack {
                             Color(.secondarySystemBackground)
 
-                            Image(systemName: "headphones")
-                                .font(.system(size: 86))
-                                .foregroundStyle(.primary)
+                            Image(systemName: "shippingbox")
+                                .font(.system(size: 80))
+                                .foregroundStyle(green)
                         }
                     }
                 }
                 .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: 20))
 
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(estimate.name)
-                            .font(.title2.bold())
-
-                        Text(estimate.detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    VStack(spacing: 2) {
-                        Text("認識精度")
-                            .font(.caption)
-
-                        Text("\(estimate.confidence)%")
-                            .font(.title3.bold())
-                            .foregroundStyle(green)
-                    }
-                    .frame(width: 82, height: 82)
-                    .background(green.opacity(0.10))
-                    .clipShape(Circle())
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("商品の状態")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("商品名")
                         .font(.headline)
 
-                    HStack(spacing: 8) {
-                        ForEach(["美品", "良品", "使用感あり"], id: \.self) { item in
-                            Button(item) {
-                                condition = item
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundStyle(condition == item ? .white : .primary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 10)
-                            .background(condition == item ? green : Color.gray.opacity(0.28))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
+                    TextField(
+                        "例：SONY WH-1000XM5",
+                        text: $productName
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.title3)
+                    .textInputAutocapitalization(.never)
+
+                    Text("商品名や型番を入力すると、実際の販売サイトを検索できます。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                PriceRow(title: "新品販売価格", price: estimate.newPrice, icon: "cart")
-                PriceRow(title: "中古販売価格", price: estimate.usedPrice, icon: "tag")
-                PriceRow(title: "推定買取価格", price: estimate.buyPrice, icon: "yensign.circle")
+                VStack(alignment: .leading, spacing: 12) {
+
+                    Text("販売価格を調べる")
+                        .font(.title3.bold())
+
+                    SearchButton(
+                        title: "Amazonで新品価格を見る",
+                        subtitle: "Amazon.co.jp",
+                        icon: "cart.fill",
+                        color: green
+                    ) {
+                        openSearch(
+                            base: "https://www.amazon.co.jp/s?k=",
+                            keyword: productName
+                        )
+                    }
+
+                    SearchButton(
+                        title: "楽天市場で価格を見る",
+                        subtitle: "楽天市場",
+                        icon: "bag.fill",
+                        color: green
+                    ) {
+                        openSearch(
+                            base: "https://search.rakuten.co.jp/search/mall/",
+                            keyword: productName
+                        )
+                    }
+
+                    SearchButton(
+                        title: "Yahoo!ショッピングで見る",
+                        subtitle: "Yahoo!ショッピング",
+                        icon: "cart",
+                        color: green
+                    ) {
+                        openSearch(
+                            base: "https://shopping.yahoo.co.jp/search?p=",
+                            keyword: productName
+                        )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+
+                    Text("中古相場を調べる")
+                        .font(.title3.bold())
+
+                    SearchButton(
+                        title: "メルカリで中古価格を見る",
+                        subtitle: "実際の出品価格を確認",
+                        icon: "tag.fill",
+                        color: green
+                    ) {
+                        openSearch(
+                            base: "https://jp.mercari.com/search?keyword=",
+                            keyword: productName
+                        )
+                    }
+                }
 
                 Button(action: onSell) {
-                    Text("売る場所を比較する")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .foregroundStyle(.white)
-                        .background(green)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    HStack {
+                        Image(systemName: "yensign.circle.fill")
+
+                        Text("売る場所を比較する")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .foregroundStyle(.white)
+                    .background(green)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
 
-                Text("※ 現在の価格は試作版のサンプル表示です。")
+                Text("※ 表示価格を固定せず、各サービスの現在の検索結果を確認する方式に変更しました。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .padding(16)
         }
-        .navigationTitle("査定結果")
+        .navigationTitle("査定・価格比較")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func openSearch(base: String, keyword: String) {
+        let word = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !word.isEmpty else {
+            return
+        }
+
+        guard let encoded =
+                word.addingPercentEncoding(
+                    withAllowedCharacters: .urlQueryAllowed
+                ),
+              let url = URL(string: base + encoded) else {
+            return
+        }
+
+        openURL(url)
     }
 }
 
-struct PriceRow: View {
+struct SearchButton: View {
     let title: String
-    let price: String
+    let subtitle: String
     let icon: String
-
-    private let green = Color(red: 32/255, green: 177/255, blue: 90/255)
+    let color: Color
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .frame(width: 42, height: 42)
-                .background(green.opacity(0.10))
-                .foregroundStyle(green)
-                .clipShape(Circle())
+        Button(action: action) {
+            HStack(spacing: 14) {
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
+                Image(systemName: icon)
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .background(color.opacity(0.12))
+                    .foregroundStyle(color)
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right.square")
                     .foregroundStyle(.secondary)
-
-                Text(price)
-                    .font(.title2.bold())
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundStyle(.secondary)
+            .padding(14)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-        .padding(15)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
     }
 }
 
 struct SellOptionsView: View {
-    private let green = Color(red: 32/255, green: 177/255, blue: 90/255)
+    let productName: String
 
-    private let shops = [
-        ("リユース館 八王子店", "徒歩12分", "storefront"),
-        ("買取センター 南大沢店", "車で8分", "car"),
-        ("中古買取ショップ 立川店", "営業中", "checkmark.circle")
-    ]
+    @Environment(\.openURL) private var openURL
+
+    private let green = Color(
+        red: 32 / 255,
+        green: 177 / 255,
+        blue: 90 / 255
+    )
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("販売する")
+            VStack(alignment: .leading, spacing: 18) {
+
+                Text("売却先を探す")
                     .font(.title2.bold())
 
-                HStack(spacing: 8) {
-                    SellCard(title: "フリマ", subtitle: "高く売れやすい", icon: "shippingbox")
-                    SellCard(title: "オークション", subtitle: "入札で販売", icon: "hammer")
-                    SellCard(title: "中古市場", subtitle: "手軽に出品", icon: "storefront")
+                Text(
+                    productName.isEmpty
+                    ? "商品"
+                    : productName
+                )
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+                SearchButton(
+                    title: "メルカリで売る",
+                    subtitle: "同じ商品の出品を確認",
+                    icon: "shippingbox.fill",
+                    color: green
+                ) {
+                    openProductSearch(
+                        "https://jp.mercari.com/search?keyword="
+                    )
                 }
 
-                Text("買い取ってくれるお店")
-                    .font(.title2.bold())
-                    .padding(.top, 4)
-
-                VStack(spacing: 8) {
-                    Image(systemName: "map.fill")
-                        .font(.system(size: 42))
-                        .foregroundStyle(green)
-
-                    Text("周辺店舗マップ")
-                        .font(.headline)
-
-                    Text("実店舗検索は次段階で接続します")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                SearchButton(
+                    title: "Yahoo!オークションで調べる",
+                    subtitle: "落札・出品候補を確認",
+                    icon: "hammer.fill",
+                    color: green
+                ) {
+                    openProductSearch(
+                        "https://auctions.yahoo.co.jp/search/search?p="
+                    )
                 }
-                .frame(maxWidth: .infinity, minHeight: 150)
-                .background(green.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 18))
 
-                ForEach(Array(shops.enumerated()), id: \.offset) { _, shop in
-                    HStack(spacing: 14) {
-                        Image(systemName: shop.2)
-                            .frame(width: 42, height: 42)
-                            .background(green.opacity(0.10))
-                            .foregroundStyle(green)
-                            .clipShape(Circle())
+                SearchButton(
+                    title: "近くの買取店を探す",
+                    subtitle: "Appleマップで買取店を検索",
+                    icon: "map.fill",
+                    color: green
+                ) {
+                    let query = productName.isEmpty
+                        ? "買取店"
+                        : "\(productName) 買取店"
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(shop.0)
-                                .font(.headline)
+                    let encoded =
+                        query.addingPercentEncoding(
+                            withAllowedCharacters: .urlQueryAllowed
+                        ) ?? ""
 
-                            Text(shop.1)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
+                    if let url =
+                        URL(
+                            string:
+                            "http://maps.apple.com/?q=\(encoded)"
+                        ) {
+                        openURL(url)
                     }
-                    .padding(15)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
 
-                Text("※ 店舗名・距離はサンプル表示です。")
-                    .font(.caption)
+                Text("今後ここに、買取店ごとの査定額比較や現在地周辺の店舗一覧を追加していきます。")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
             }
             .padding(16)
         }
-        .navigationTitle("売る場所を選ぶ")
+        .navigationTitle("売却先を比較")
         .navigationBarTitleDisplayMode(.inline)
     }
-}
 
-struct SellCard: View {
-    let title: String
-    let subtitle: String
-    let icon: String
+    private func openProductSearch(_ base: String) {
+        let word =
+            productName.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
 
-    private let green = Color(red: 32/255, green: 177/255, blue: 90/255)
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(green)
-
-            Text(title)
-                .font(.subheadline.bold())
-
-            Text(subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        guard !word.isEmpty,
+              let encoded =
+                word.addingPercentEncoding(
+                    withAllowedCharacters: .urlQueryAllowed
+                ),
+              let url = URL(string: base + encoded) else {
+            return
         }
-        .frame(maxWidth: .infinity, minHeight: 116)
-        .padding(8)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+        openURL(url)
     }
 }
 
 struct CameraPicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
+
     let onFinish: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
+    func makeUIViewController(
+        context: Context
+    ) -> UIImagePickerController {
+
         let picker = UIImagePickerController()
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+
+        picker.sourceType =
+            UIImagePickerController
+                .isSourceTypeAvailable(.camera)
+            ? .camera
+            : .photoLibrary
+
         picker.delegate = context.coordinator
+
         return picker
     }
 
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(
+        _ uiViewController: UIImagePickerController,
+        context: Context
+    ) {}
 
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    final class Coordinator:
+        NSObject,
+        UIImagePickerControllerDelegate,
+        UINavigationControllerDelegate {
+
         let parent: CameraPicker
 
         init(_ parent: CameraPicker) {
@@ -453,13 +508,18 @@ struct CameraPicker: UIViewControllerRepresentable {
 
         func imagePickerController(
             _ picker: UIImagePickerController,
-            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+            didFinishPickingMediaWithInfo info:
+                [UIImagePickerController.InfoKey: Any]
         ) {
-            parent.image = info[.originalImage] as? UIImage
+            parent.image =
+                info[.originalImage] as? UIImage
+
             parent.onFinish()
         }
 
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        func imagePickerControllerDidCancel(
+            _ picker: UIImagePickerController
+        ) {
             parent.onFinish()
         }
     }
