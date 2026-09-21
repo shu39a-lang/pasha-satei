@@ -111,9 +111,11 @@ struct ContentView: View {
             selectedImage = image
             showCamera = false
 
-            Task {
-                await recognize(image: image)
+            Task { @MainActor in
+                isRecognizing = true
                 path.append(.result)
+                await Task.yield()
+                await recognize(image: image)
             }
         },
         onCancel: {
@@ -131,8 +133,11 @@ struct ContentView: View {
                 }
 
                 selectedImage = image
-                await recognize(image: image)
+                selectedPhoto = nil
+                isRecognizing = true
                 path.append(.result)
+                await Task.yield()
+                await recognize(image: image)
             }
         }
     }
@@ -163,13 +168,22 @@ struct ContentView: View {
         detectedBarcode = local.barcode
 
         if let gemini, gemini.ok {
-            let name =
+            let displayName =
                 gemini.displayName?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     ) ?? ""
 
-            productName = name
+            let apiProductName =
+                gemini.productName?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ) ?? ""
+
+            productName =
+                !displayName.isEmpty
+                ? displayName
+                : apiProductName
 
             brand =
                 gemini.brand?
@@ -277,7 +291,7 @@ struct HomeView: View {
                         }
 
                         Text(
-                            "どこで売れば一番手取りが多いか比較"
+                           "どこで売れば一番手取りが多いか比較"
                         )
                         .font(.headline)
                         .foregroundStyle(.secondary)
@@ -548,7 +562,7 @@ struct ResultView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: 270)
-                            .frame(maxWidth: .infinity)
+              .frame(maxWidth: .infinity)
                             .background(Color.black)
                             .clipShape(
                                 RoundedRectangle(
@@ -558,16 +572,25 @@ struct ResultView: View {
                     }
 
                     if isRecognizing {
-                        VStack(spacing: 10) {
+                        VStack(spacing: 12) {
                             ProgressView()
+                                .controlSize(.large)
                                 .tint(green)
+                                .scaleEffect(1.25)
 
                             Text(
-                                "AIが商品を判定しています…"
+                                "AIが画像を検索・照合しています…"
                             )
                             .font(.headline)
+
+                            Text(
+                                "商品名・ブランド・型番を確認中です"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
-                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 22)
                     }
 
                     VStack(
