@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
-@preconcurrency import Vision
+import Vision
 
 enum AppRoute: Hashable {
     case result
@@ -56,42 +56,11 @@ struct YahooPriceItem: Codable, Identifiable {
     let imageUrl: String?
     let seller: String?
     let condition: String?
-    let capacity: String?
 
     var id: String {
         url.isEmpty
         ? "\(name)-\(price)"
         : url
-    }
-
-    var detailText: String {
-        var parts: [String] = []
-
-        if let capacity {
-            let value =
-                capacity.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-
-            if !value.isEmpty {
-                parts.append(value)
-            }
-        }
-
-        if let condition {
-            let value =
-                condition.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-
-            if !value.isEmpty {
-                parts.append(value)
-            }
-        }
-
-        return parts.joined(
-            separator: " ｜ "
-        )
     }
 }
 
@@ -215,19 +184,16 @@ struct ContentView: View {
         evidence = []
         candidates = []
 
-        let local =
-            await LocalProductRecognizer.recognize(
-                image: image
-            )
+        async let localTask =
+            LocalProductRecognizer.recognize(image: image)
+
+        async let geminiTask =
+            GeminiProductAPI.analyze(image: image)
+
+        let local = await localTask
+        let gemini = await geminiTask
 
         detectedBarcode = local.barcode
-
-        let gemini =
-            await GeminiProductAPI.analyze(
-                image: image,
-                ocrText: local.text,
-                barcode: local.barcode
-            )
 
         if let gemini, gemini.ok {
             let displayName =
@@ -289,7 +255,7 @@ struct ContentView: View {
                     "Gemini画像認識 + OCR補助"
             } else {
                 recognitionSource =
-                    "JAN/EAN優先照合 + AI画像認識"
+                    "Gemini画像認識 + JAN/EAN照合 + OCR補助"
             }
         } else {
             recognitionSource =
@@ -385,11 +351,11 @@ struct HomeView: View {
                             .foregroundStyle(green)
                         }
 
-                        Text("1枚の写真で商品をAI判定")
+                        Text("撮るだけで商品をAI判定")
                             .font(.title2.bold())
 
                         Text(
-                            "バーコードが写っていれば最優先で照合。無い場合は写真・文字・形状から商品を絞り込みます。"
+                            "バーコードが無くても、写真全体からブランド・商品名・型番・容量などを判断します。"
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -600,7 +566,6 @@ struct ResultView: View {
     private var openURL
 
     @Binding var productName: String
-
     @Binding var detectedBarcode: String
     @Binding var recognitionSource: String
     @Binding var confidence: Int
@@ -612,6 +577,16 @@ struct ResultView: View {
     @Binding var isRecognizing: Bool
 
     let onCompare: () -> Void
+
+    @State private var originalProductName = ""
+    @State private var originalBarcode = ""
+    @State private var originalRecognitionSource = ""
+    @State private var originalConfidence = 0
+    @State private var originalBrand = ""
+    @State private var originalCategory = ""
+    @State private var originalModelNumber = ""
+    @State private var originalEvidence: [String] = []
+    @State private var hasCapturedOriginal = false
 
     private let green = Color(
         red: 39 / 255,
@@ -632,7 +607,7 @@ struct ResultView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: 270)
-              .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity)
                             .background(Color.black)
                             .clipShape(
                                 RoundedRectangle(
@@ -648,29 +623,21 @@ struct ResultView: View {
                                 .tint(green)
                                 .scaleEffect(1.25)
 
-                            Text(
-                                "AIが画像を検索・照合しています…"
-                            )
-                            .font(.headline)
+                            Text("AIが画像を検索・照合しています…")
+                                .font(.headline)
 
-                            Text(
-                                "商品名・ブランド・型番を確認中です"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text("商品名・ブランド・型番を確認中です")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                            Text(
-                                "検索状況により10〜30秒ほどかかる場合があります"
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            Text("検索状況により10〜30秒ほどかかる場合があります")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
 
-                            Text(
-                                "正確な商品が出ない場合は、角度や写す面を変えて撮り直してみてください。"
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                            Text("正確な商品が出ない場合は、角度や写す面を変えて撮り直してみてください。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
@@ -681,11 +648,8 @@ struct ResultView: View {
                         spacing: 10
                     ) {
                         HStack {
-                            Image(
-                                systemName:
-                                    "sparkles"
-                            )
-                            .foregroundStyle(green)
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(green)
 
                             Text("AIの商品判定")
                                 .font(.headline)
@@ -693,11 +657,9 @@ struct ResultView: View {
                             Spacer()
 
                             if confidence > 0 {
-                                Text(
-                                    "参考 \(confidence)%"
-                                )
-                                .font(.caption.bold())
-                                .foregroundStyle(green)
+                                Text("参考 \(confidence)%")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(green)
                             }
                         }
 
@@ -716,11 +678,9 @@ struct ResultView: View {
                             )
                         )
 
-                        Text(
-                            "認識が違う場合は商品名を直接修正できます。"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text("認識が違う場合は商品名を直接修正できます。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(16)
                     .background(
@@ -818,7 +778,7 @@ struct ResultView: View {
                         )
                     }
 
-                    if !candidates.isEmpty {
+                    if !candidates.isEmpty || hasCapturedOriginal {
                         VStack(
                             alignment: .leading,
                             spacing: 10
@@ -826,67 +786,32 @@ struct ResultView: View {
                             Text("近い候補から選ぶ")
                                 .font(.headline)
 
+                            if hasCapturedOriginal && !originalProductName.isEmpty {
+                                CandidateRow(
+                                    title: originalProductName,
+                                    isSelected: productName == originalProductName && recognitionSource != "近い候補から選択",
+                                    green: green,
+                                    onSelect: restoreOriginal,
+                                    onConfirm: {
+                                        openGoogleSearch(originalProductName)
+                                    }
+                                )
+                            }
+
                             ForEach(
                                 candidates.prefix(3),
                                 id: \.self
                             ) { candidate in
-                                VStack(
-                                    alignment: .leading,
-                                    spacing: 8
-                                ) {
-                                    Button {
-                                        productName =
-                                            candidate
-                                    } label: {
-                                        HStack {
-                                            Text(candidate)
-                                                .multilineTextAlignment(
-                                                    .leading
-                                                )
-
-                                            Spacer()
-
-                                            Image(
-                                                systemName:
-                                                    "checkmark.circle"
-                                            )
-                                        }
+                                CandidateRow(
+                                    title: candidate,
+                                    isSelected: productName == candidate && recognitionSource == "近い候補から選択",
+                                    green: green,
+                                    onSelect: {
+                                        selectCandidate(candidate)
+                                    },
+                                    onConfirm: {
+                                        openGoogleSearch(candidate)
                                     }
-                                    .buttonStyle(.plain)
-
-                                    Button {
-                                        let encoded =
-                                            candidate.addingPercentEncoding(
-                                                withAllowedCharacters:
-                                                    .urlQueryAllowed
-                                            ) ?? candidate
-
-                                        if let url =
-                                            URL(
-                                                string:
-                                                    "https://www.google.com/search?q=\(encoded)"
-                                            ) {
-                                            openURL(url)
-                                        }
-                                    } label: {
-                                        Label(
-                                            "この候補をGoogleで確認",
-                                            systemImage:
-                                                "arrow.up.right.square"
-                                        )
-                                        .font(.caption.bold())
-                                        .foregroundStyle(green)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(12)
-                                .background(
-                                    Color.white.opacity(0.06)
-                                )
-                                .clipShape(
-                                    RoundedRectangle(
-                                        cornerRadius: 12
-                                    )
                                 )
                             }
                         }
@@ -895,13 +820,10 @@ struct ResultView: View {
                     Button(action: onCompare) {
                         Label(
                             "販売先と手取り額を比較",
-                            systemImage:
-                                "chart.bar.fill"
+                            systemImage: "chart.bar.fill"
                         )
                         .font(.headline)
-                        .frame(
-                            maxWidth: .infinity
-                        )
+                        .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
                         .foregroundStyle(.white)
                         .background(green)
@@ -918,6 +840,167 @@ struct ResultView: View {
         }
         .navigationTitle("商品確認")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !isRecognizing {
+                captureOriginalIfNeeded()
+            }
+        }
+        .onChange(of: isRecognizing) { newValue in
+            if !newValue {
+                captureOriginalIfNeeded()
+            }
+        }
+    }
+
+    private func captureOriginalIfNeeded() {
+        guard !hasCapturedOriginal,
+              !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return
+        }
+
+        originalProductName = productName
+        originalBarcode = detectedBarcode
+        originalRecognitionSource = recognitionSource
+        originalConfidence = confidence
+        originalBrand = brand
+        originalCategory = category
+        originalModelNumber = modelNumber
+        originalEvidence = evidence
+        hasCapturedOriginal = true
+    }
+
+    private func selectCandidate(_ candidate: String) {
+        captureOriginalIfNeeded()
+        productName = candidate
+        detectedBarcode = ""
+        recognitionSource = "近い候補から選択"
+        confidence = 0
+        brand = ""
+        category = ""
+        modelNumber = ""
+        evidence = []
+    }
+
+    private func restoreOriginal() {
+        guard hasCapturedOriginal else { return }
+
+        productName = originalProductName
+        detectedBarcode = originalBarcode
+        recognitionSource = originalRecognitionSource
+        confidence = originalConfidence
+        brand = originalBrand
+        category = originalCategory
+        modelNumber = originalModelNumber
+        evidence = originalEvidence
+    }
+
+    private func openGoogleSearch(_ text: String) {
+        let encoded = text.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? text
+
+        if let url = URL(
+            string: "https://www.google.com/search?q=\(encoded)"
+        ) {
+            openURL(url)
+        }
+    }
+}
+
+struct CandidateRow: View {
+    let title: String
+    let isSelected: Bool
+    let green: Color
+    let onSelect: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onSelect) {
+                HStack(spacing: 10) {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 4
+                    ) {
+                        Text(title)
+                            .font(.subheadline.bold())
+                            .multilineTextAlignment(.leading)
+
+                        Text(
+                            isSelected
+                            ? "選択中"
+                            : "この候補を選ぶ"
+                        )
+                        .font(.caption.bold())
+                    }
+
+                    Spacer()
+
+                    Image(
+                        systemName:
+                            isSelected
+                            ? "checkmark.circle.fill"
+                            : "arrow.right.circle.fill"
+                    )
+                    .font(.title3)
+                }
+                .foregroundStyle(
+                    isSelected
+                    ? Color.black
+                    : green
+                )
+                .padding(12)
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
+                .background(
+                    isSelected
+                    ? green
+                    : green.opacity(0.12)
+                )
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 12
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onConfirm) {
+                VStack(spacing: 4) {
+                    Image(
+                        systemName:
+                            "arrow.up.right.square"
+                    )
+                    .font(.title3)
+
+                    Text("確認")
+                        .font(.caption.bold())
+                }
+                .foregroundStyle(green)
+                .frame(width: 56, height: 54)
+                .background(
+                    Color.white.opacity(0.06)
+                )
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 12
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(
+            Color.white.opacity(0.04)
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 14
+            )
+        )
     }
 }
 
@@ -986,15 +1069,6 @@ struct CompareView: View {
     @State private var shippingCosts:
         [String: String] = [:]
 
-    @State private var mercariPrice:
-        YahooPriceResponse?
-
-    @State private var isLoadingMercari =
-        false
-
-    @State private var mercariError =
-        ""
-
     @State private var yahooPrice:
         YahooPriceResponse?
 
@@ -1002,15 +1076,6 @@ struct CompareView: View {
         false
 
     @State private var yahooError =
-        ""
-
-    @State private var rakumaPrice:
-        YahooPriceResponse?
-
-    @State private var isLoadingRakuma =
-        false
-
-    @State private var rakumaError =
         ""
 
     @Environment(\.openURL)
@@ -1052,44 +1117,13 @@ struct CompareView: View {
                         }
                     }
 
-                    UsedPriceCard(
-                        title: "メルカリ 現在出品中相場",
-                        countLabel: "現在出品中",
-                        emptyMessage: "この商品はメルカリの現在出品中の商品で該当商品が見つかりませんでした。",
-                        data: mercariPrice,
-                        isLoading: isLoadingMercari,
-                        errorText: mercariError,
-                        onRetry: {
-                            Task {
-                                await loadMercariPrice()
-                            }
-                        }
-                    )
-
-                    UsedPriceCard(
-                        title: "Yahoo!ショッピング 中古相場",
-                        countLabel: "中古",
-                        emptyMessage: "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。",
+                    YahooUsedPriceCard(
                         data: yahooPrice,
                         isLoading: isLoadingYahoo,
                         errorText: yahooError,
                         onRetry: {
                             Task {
                                 await loadYahooPrice()
-                            }
-                        }
-                    )
-
-                    UsedPriceCard(
-                        title: "楽天ラクマ 現在出品中相場",
-                        countLabel: "現在出品中",
-                        emptyMessage: "この商品は楽天ラクマの現在出品中の商品で該当商品が見つかりませんでした。",
-                        data: rakumaPrice,
-                        isLoading: isLoadingRakuma,
-                        errorText: rakumaError,
-                        onRetry: {
-                            Task {
-                                await loadRakumaPrice()
                             }
                         }
                     )
@@ -1158,49 +1192,8 @@ struct CompareView: View {
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: productName) {
-            async let mercariTask: Void = loadMercariPrice()
-            async let yahooTask: Void = loadYahooPrice()
-            async let rakumaTask: Void = loadRakumaPrice()
-            _ = await (
-                mercariTask,
-                yahooTask,
-                rakumaTask
-            )
+            await loadYahooPrice()
         }
-    }
-
-    @MainActor
-    private func loadMercariPrice() async {
-        guard !productName
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .isEmpty
-        else {
-            return
-        }
-
-        isLoadingMercari = true
-        mercariError = ""
-
-        let result =
-            await MercariPriceAPI.fetch(
-                productName: productName
-            )
-
-        if let result, result.ok {
-            mercariPrice = result
-        } else {
-            mercariPrice = result
-            mercariError =
-                result?.error?
-                    .trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-                ?? "メルカリの現在出品価格を取得できませんでした。"
-        }
-
-        isLoadingMercari = false
     }
 
     @MainActor
@@ -1300,40 +1293,6 @@ struct CompareView: View {
         )
     }
 
-    @MainActor
-    private func loadRakumaPrice() async {
-        guard !productName
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .isEmpty
-        else {
-            return
-        }
-
-        isLoadingRakuma = true
-        rakumaError = ""
-
-        let result =
-            await RakumaPriceAPI.fetch(
-                productName: productName
-            )
-
-        if let result, result.ok {
-            rakumaPrice = result
-        } else {
-            rakumaPrice = result
-            rakumaError =
-                result?.error?
-                    .trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-                ?? "楽天ラクマの現在出品価格を取得できませんでした。"
-        }
-
-        isLoadingRakuma = false
-    }
-
     private func binding(
         for key: String,
         dictionary:
@@ -1382,10 +1341,7 @@ struct CompareView: View {
     }
 }
 
-struct UsedPriceCard: View {
-    let title: String
-    let countLabel: String
-    let emptyMessage: String
+struct YahooUsedPriceCard: View {
     let data: YahooPriceResponse?
     let isLoading: Bool
     let errorText: String
@@ -1404,7 +1360,7 @@ struct UsedPriceCard: View {
         ) {
             HStack {
                 Label(
-                    title,
+                    "Yahoo!ショッピング 中古相場",
                     systemImage:
                         "cart.fill"
                 )
@@ -1445,7 +1401,7 @@ struct UsedPriceCard: View {
                     }
 
                     Text(
-                        "\(countLabel) \(data.count)件を取得"
+                        "中古 \(data.count)件を取得"
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1480,12 +1436,6 @@ struct UsedPriceCard: View {
                                                     .subheadline
                                                 )
                                                 .lineLimit(2)
-
-                                            if !item.detailText.isEmpty {
-                                                Text(item.detailText)
-                                                    .font(.caption.bold())
-                                                    .foregroundStyle(green)
-                                            }
 
                                             if let seller =
                                                 item.seller,
@@ -1533,7 +1483,7 @@ struct UsedPriceCard: View {
 
                 } else {
                     Text(
-                        emptyMessage
+                        "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。"
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1838,144 +1788,6 @@ struct MarketplaceCard: View {
     }
 }
 
-enum RakumaPriceAPI {
-    private static let endpoint =
-        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
-
-    static func fetch(
-        productName: String
-    ) async -> YahooPriceResponse? {
-
-        guard let url =
-                URL(string: endpoint)
-        else {
-            return nil
-        }
-
-        let body: [String: Any] = [
-            "action": "rakumaUsedPrice",
-            "productName": productName
-        ]
-
-        guard let jsonData =
-                try? JSONSerialization
-                    .data(
-                        withJSONObject: body
-                    )
-        else {
-            return nil
-        }
-
-        var request =
-            URLRequest(url: url)
-
-        request.httpMethod = "POST"
-        request.setValue(
-            "application/json",
-            forHTTPHeaderField:
-                "Content-Type"
-        )
-        request.httpBody = jsonData
-        request.timeoutInterval = 20
-
-        do {
-            let (data, response) =
-                try await URLSession
-                    .shared
-                    .data(
-                        for: request
-                    )
-
-            guard let http =
-                    response
-                    as? HTTPURLResponse,
-                  200...299 ~=
-                    http.statusCode
-            else {
-                return nil
-            }
-
-            return try JSONDecoder()
-                .decode(
-                    YahooPriceResponse.self,
-                    from: data
-                )
-
-        } catch {
-            return nil
-        }
-    }
-}
-
-enum MercariPriceAPI {
-    private static let endpoint =
-        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
-
-    static func fetch(
-        productName: String
-    ) async -> YahooPriceResponse? {
-
-        guard let url =
-                URL(string: endpoint)
-        else {
-            return nil
-        }
-
-        let body: [String: Any] = [
-            "action": "mercariUsedPrice",
-            "productName": productName
-        ]
-
-        guard let jsonData =
-                try? JSONSerialization
-                    .data(
-                        withJSONObject: body
-                    )
-        else {
-            return nil
-        }
-
-        var request =
-            URLRequest(url: url)
-
-        request.httpMethod = "POST"
-        request.setValue(
-            "application/json",
-            forHTTPHeaderField:
-                "Content-Type"
-        )
-        request.httpBody = jsonData
-        request.timeoutInterval = 20
-
-        do {
-            let (data, response) =
-                try await URLSession
-                    .shared
-                    .data(
-                        for: request
-                    )
-
-            guard let http =
-                    response
-                    as? HTTPURLResponse,
-                  200...299 ~=
-                    http.statusCode
-            else {
-                return nil
-            }
-
-            return try JSONDecoder()
-                .decode(
-                    YahooPriceResponse.self,
-                    from: data
-                )
-
-        } catch {
-            return nil
-        }
-    }
-}
-
 enum YahooPriceAPI {
     private static let endpoint =
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
@@ -2052,9 +1864,7 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     static func analyze(
-        image: UIImage,
-        ocrText: String,
-        barcode: String
+        image: UIImage
     ) async -> GeminiProductResponse? {
 
         guard let url =
@@ -2069,9 +1879,7 @@ enum GeminiProductAPI {
         let body: [String: Any] = [
             "imageBase64":
                 imageData
-                    .base64EncodedString(),
-            "ocrText": ocrText,
-            "barcode": barcode
+                    .base64EncodedString()
         ]
 
         guard let jsonData =
