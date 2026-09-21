@@ -42,7 +42,7 @@ struct GeminiProductResponse: Codable {
     let modelNumber: String?
     let size: String?
     let category: String?
-    let confidence: Int?
+    let confidence: Double?
     let evidence: [String]?
     let candidates: [String]?
     let error: String?
@@ -82,15 +82,15 @@ struct ContentView: View {
                     ResultView(
                         image: selectedImage,
                         productName: $productName,
-                        detectedBarcode: detectedBarcode,
-                        recognitionSource: recognitionSource,
-                        confidence: confidence,
-                        brand: brand,
-                        category: category,
-                        modelNumber: modelNumber,
-                        evidence: evidence,
-                        candidates: candidates,
-                        isRecognizing: isRecognizing,
+                        detectedBarcode: $detectedBarcode,
+                        recognitionSource: $recognitionSource,
+                        confidence: $confidence,
+                        brand: $brand,
+                        category: $category,
+                        modelNumber: $modelNumber,
+                        evidence: $evidence,
+                        candidates: $candidates,
+                        isRecognizing: $isRecognizing,
                         onCompare: {
                             path.append(.compare)
                         }
@@ -203,8 +203,13 @@ struct ContentView: View {
                         in: .whitespacesAndNewlines
                     ) ?? ""
 
-            confidence =
+            let rawConfidence =
                 gemini.confidence ?? 0
+
+            confidence =
+                rawConfidence <= 1
+                ? Int((rawConfidence * 100).rounded())
+                : Int(rawConfidence.rounded())
 
             evidence =
                 gemini.evidence ?? []
@@ -531,15 +536,15 @@ struct ResultView: View {
 
     @Binding var productName: String
 
-    let detectedBarcode: String
-    let recognitionSource: String
-    let confidence: Int
-    let brand: String
-    let category: String
-    let modelNumber: String
-    let evidence: [String]
-    let candidates: [String]
-    let isRecognizing: Bool
+    @Binding var detectedBarcode: String
+    @Binding var recognitionSource: String
+    @Binding var confidence: Int
+    @Binding var brand: String
+    @Binding var category: String
+    @Binding var modelNumber: String
+    @Binding var evidence: [String]
+    @Binding var candidates: [String]
+    @Binding var isRecognizing: Bool
 
     let onCompare: () -> Void
 
