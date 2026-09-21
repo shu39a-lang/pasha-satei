@@ -176,15 +176,10 @@ struct ContentView: View {
                 selectedImage = image
             }
 
-            Task { @MainActor in
-                if capturedImages.count < 3 {
-                    try? await Task.sleep(
-                        nanoseconds: 350_000_000
-                    )
-                    showCamera = true
-                } else {
-                    let images = capturedImages
-                    capturedImages = []
+            if capturedImages.count >= 3 {
+                let images = capturedImages
+                capturedImages = []
+                Task { @MainActor in
                     isRecognizing = true
                     path.append(.result)
                     await Task.yield()
@@ -507,11 +502,19 @@ struct HomeView: View {
                     }
 
                     Button {
-                        capturedImages = []
+                        if capturedImages.count >= 3 {
+                            capturedImages = []
+                        }
                         showCamera = true
                     } label: {
                         Label(
-                            "3枚撮影を開始",
+                            capturedImages.isEmpty
+                            ? "1枚目：正面を撮影"
+                            : (
+                                capturedImages.count == 1
+                                ? "2枚目：背面を撮影"
+                                : "3枚目：側面を撮影"
+                            ),
                             systemImage: "camera.fill"
                         )
                         .font(.title3.bold())
@@ -526,6 +529,14 @@ struct HomeView: View {
                             cornerRadius: 18
                         )
                     )
+
+                    if !capturedImages.isEmpty {
+                        Text(
+                            "撮影済み \(capturedImages.count) / 3枚"
+                        )
+                        .font(.subheadline.bold())
+                        .foregroundStyle(green)
+                    }
 
                     PhotosPicker(
                         selection: $selectedPhoto,
