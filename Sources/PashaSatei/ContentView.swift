@@ -909,6 +909,15 @@ struct CompareView: View {
     @State private var shippingCosts:
         [String: String] = [:]
 
+    @State private var mercariPrice:
+        YahooPriceResponse?
+
+    @State private var isLoadingMercari =
+        false
+
+    @State private var mercariError =
+        ""
+
     @State private var yahooPrice:
         YahooPriceResponse?
 
@@ -957,7 +966,24 @@ struct CompareView: View {
                         }
                     }
 
-                    YahooUsedPriceCard(
+                    UsedPriceCard(
+                        title: "メルカリ 現在出品中相場",
+                        countLabel: "現在出品中",
+                        emptyMessage: "この商品はメルカリの現在出品中の商品で該当商品が見つかりませんでした。",
+                        data: mercariPrice,
+                        isLoading: isLoadingMercari,
+                        errorText: mercariError,
+                        onRetry: {
+                            Task {
+                                await loadMercariPrice()
+                            }
+                        }
+                    )
+
+                    UsedPriceCard(
+                        title: "Yahoo!ショッピング 中古相場",
+                        countLabel: "中古",
+                        emptyMessage: "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。",
                         data: yahooPrice,
                         isLoading: isLoadingYahoo,
                         errorText: yahooError,
@@ -1032,8 +1058,44 @@ struct CompareView: View {
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: productName) {
-            await loadYahooPrice()
+            async let mercariTask: Void = loadMercariPrice()
+            async let yahooTask: Void = loadYahooPrice()
+            _ = await (mercariTask, yahooTask)
         }
+    }
+
+    @MainActor
+    private func loadMercariPrice() async {
+        guard !productName
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty
+        else {
+            return
+        }
+
+        isLoadingMercari = true
+        mercariError = ""
+
+        let result =
+            await MercariPriceAPI.fetch(
+                productName: productName
+            )
+
+        if let result, result.ok {
+            mercariPrice = result
+        } else {
+            mercariPrice = result
+            mercariError =
+                result?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "メルカリの現在出品価格を取得できませんでした。"
+        }
+
+        isLoadingMercari = false
     }
 
     @MainActor
@@ -1181,7 +1243,10 @@ struct CompareView: View {
     }
 }
 
-struct YahooUsedPriceCard: View {
+struct UsedPriceCard: View {
+    let title: String
+    let countLabel: String
+    let emptyMessage: String
     let data: YahooPriceResponse?
     let isLoading: Bool
     let errorText: String
@@ -1200,7 +1265,7 @@ struct YahooUsedPriceCard: View {
         ) {
             HStack {
                 Label(
-                    "Yahoo!ショッピング 中古相場",
+                    title,
                     systemImage:
                         "cart.fill"
                 )
@@ -1241,7 +1306,7 @@ struct YahooUsedPriceCard: View {
                     }
 
                     Text(
-                        "中古 \(data.count)件を取得"
+                        "\(countLabel) \(data.count)件を取得"
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1323,7 +1388,7 @@ struct YahooUsedPriceCard: View {
 
                 } else {
                     Text(
-                        "この商品はYahoo!ショッピングの中古検索で該当商品が見つかりませんでした。"
+                        emptyMessage
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1625,6 +1690,75 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
+    }
+}
+
+enum MercariPriceAPI {
+    private static let endpoint =
+        "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(
+        productName: String
+    ) async -> YahooPriceResponse? {
+
+        guard let url =
+                URL(string: endpoint)
+        else {
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "action": "mercariUsedPrice",
+            "productName": productName
+        ]
+
+        guard let jsonData =
+                try? JSONSerialization
+                    .data(
+                        withJSONObject: body
+                    )
+        else {
+            return nil
+        }
+
+        var request =
+            URLRequest(url: url)
+
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField:
+                "Content-Type"
+        )
+        request.httpBody = jsonData
+        request.timeoutInterval = 20
+
+        do {
+            let (data, response) =
+                try await URLSession
+                    .shared
+                    .data(
+                        for: request
+                    )
+
+            guard let http =
+                    response
+                    as? HTTPURLResponse,
+                  200...299 ~=
+                    http.statusCode
+            else {
+                return nil
+            }
+
+            return try JSONDecoder()
+                .decode(
+                    YahooPriceResponse.self,
+                    from: data
+                )
+
+        } catch {
+            return nil
+        }
     }
 }
 
