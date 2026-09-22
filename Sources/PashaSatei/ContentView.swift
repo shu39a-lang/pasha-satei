@@ -193,16 +193,21 @@ struct ContentView: View {
         evidence = []
         candidates = []
 
-        async let localTask =
-            LocalProductRecognizer.recognize(image: image)
-
-        async let geminiTask =
-            GeminiProductAPI.analyze(image: image)
-
-        let local = await localTask
-        let gemini = await geminiTask
+        // 過去に安定していた方式：
+        // 先にiPhone側でOCR/JANを取得し、その結果をGeminiへ渡す。
+        let local =
+            await LocalProductRecognizer.recognize(
+                image: image
+            )
 
         detectedBarcode = local.barcode
+
+        let gemini =
+            await GeminiProductAPI.analyze(
+                image: image,
+                ocrText: local.text,
+                barcode: local.barcode
+            )
 
         if let gemini, gemini.ok {
             let displayName =
@@ -289,6 +294,7 @@ struct ContentView: View {
 
         isRecognizing = false
     }
+
 }
 
 struct HomeView: View {
@@ -2019,7 +2025,9 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     static func analyze(
-        image: UIImage
+        image: UIImage,
+        ocrText: String,
+        barcode: String
     ) async -> GeminiProductResponse? {
 
         guard let url =
@@ -2034,7 +2042,9 @@ enum GeminiProductAPI {
         let body: [String: Any] = [
             "imageBase64":
                 imageData
-                    .base64EncodedString()
+                    .base64EncodedString(),
+            "ocrText": ocrText,
+            "barcode": barcode
         ]
 
         guard let jsonData =
@@ -2055,6 +2065,8 @@ enum GeminiProductAPI {
                 "Content-Type"
         )
         request.httpBody = jsonData
+
+        // 過去の成功版と同じ上限。
         request.timeoutInterval = 45
 
         do {
