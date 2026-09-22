@@ -97,6 +97,7 @@ struct ContentView: View {
     @State private var evidence: [String] = []
     @State private var candidates: [String] = []
     @State private var isRecognizing = false
+    @State private var hasPreviousSearchResult = false
 
     // 販売先比較へ渡す値は遷移直前に固定して保持する。
     // 戻る/再表示の操作で productName が一時的に変化しても、
@@ -109,9 +110,9 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
-                hasPreviousResult: selectedImage != nil && !productName.isEmpty,
+                hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
-                    if selectedImage != nil && !productName.isEmpty {
+                    if hasPreviousSearchResult {
                         path.append(.result)
                     }
                 }
@@ -168,6 +169,7 @@ struct ContentView: View {
 
             Task { @MainActor in
                 isRecognizing = true
+                hasPreviousSearchResult = true
                 path.append(.result)
                 await Task.yield()
                 await recognize(image: image)
@@ -190,6 +192,7 @@ struct ContentView: View {
                 selectedImage = image
                 selectedPhoto = nil
                 isRecognizing = true
+                hasPreviousSearchResult = true
                 path.append(.result)
                 await Task.yield()
                 await recognize(image: image)
