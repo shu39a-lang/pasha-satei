@@ -99,12 +99,6 @@ struct ContentView: View {
     @State private var isRecognizing = false
     @State private var hasPreviousSearchResult = false
 
-    // 販売先比較へ渡す値は遷移直前に固定して保持する。
-    // 戻る/再表示の操作で productName が一時的に変化しても、
-    // メルカリ・Yahoo!・ラクマの検索条件が消えないようにする。
-    @State private var compareProductName = ""
-    @State private var compareBarcode = ""
-
     var body: some View {
         NavigationStack(path: $path) {
             HomeView(
@@ -133,29 +127,14 @@ struct ContentView: View {
                         candidates: $candidates,
                         isRecognizing: $isRecognizing,
                         onCompare: {
-                            let name = productName
-                                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                            guard !name.isEmpty else {
-                                return
-                            }
-
-                            compareProductName = name
-                            compareBarcode = detectedBarcode
                             path.append(.compare)
                         }
                     )
 
                 case .compare:
                     CompareView(
-                        productName:
-                            compareProductName.isEmpty
-                            ? productName
-                            : compareProductName,
-                        barcode:
-                            compareBarcode.isEmpty
-                            ? detectedBarcode
-                            : compareBarcode
+                        productName: productName,
+                        barcode: detectedBarcode
                     )
                 }
             }
@@ -518,9 +497,7 @@ struct HomeView: View {
                     .foregroundStyle(.white)
 
                     if hasPreviousResult {
-                        Button(
-                            action: onOpenPreviousResult
-                        ) {
+                        Button(action: onOpenPreviousResult) {
                             Label(
                                 "前回の検索結果を見る",
                                 systemImage: "clock.arrow.circlepath"
@@ -529,17 +506,13 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .foregroundStyle(green)
-                            .background(
-                                green.opacity(0.10)
-                            )
+                            .background(green.opacity(0.10))
                             .overlay(
-                                RoundedRectangle(
-                                    cornerRadius: 18
-                                )
-                                .stroke(
-                                    green.opacity(0.35),
-                                    lineWidth: 1
-                                )
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(
+                                        green.opacity(0.35),
+                                        lineWidth: 1
+                                    )
                             )
                         }
                         .buttonStyle(.plain)
