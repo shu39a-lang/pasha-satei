@@ -1157,56 +1157,6 @@ struct CompareView: View {
                         }
                     )
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 10
-                    ) {
-                        Label(
-                            "販売先ごとの手取りを比較",
-                            systemImage: "chart.bar.doc.horizontal.fill"
-                        )
-                        .font(.headline)
-                        .foregroundStyle(green)
-
-                        Text(
-                            "下の販売先は、相場を確認して販売価格と送料を入力すると、手取り額を自動計算します。"
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(16)
-                    .background(
-                        Color(
-                            red: 24 / 255,
-                            green: 24 / 255,
-                            blue: 26 / 255
-                        )
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 18
-                        )
-                    )
-
-                    ForEach(marketplaces.filter { $0.name == "楽天ラクマ" }) { market in
-                        MarketplaceCard(
-                            market: market,
-                            salePrice: binding(
-                                for: market.name,
-                                dictionary: $salePrices
-                            ),
-                            shippingCost: binding(
-                                for: market.name,
-                                dictionary: $shippingCosts
-                            ),
-                            isBest:
-                                bestMarketName
-                                == market.name,
-                            onSearch: {
-                                openMarket(market: market)
-                            }
-                        )
-                    }
                 }
                 .padding(16)
             }
