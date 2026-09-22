@@ -98,6 +98,12 @@ struct ContentView: View {
     @State private var candidates: [String] = []
     @State private var isRecognizing = false
 
+    // 販売先比較へ渡す値は遷移直前に固定して保持する。
+    // 戻る/再表示の操作で productName が一時的に変化しても、
+    // メルカリ・Yahoo!・ラクマの検索条件が消えないようにする。
+    @State private var compareProductName = ""
+    @State private var compareBarcode = ""
+
     var body: some View {
         NavigationStack(path: $path) {
             HomeView(
@@ -126,14 +132,29 @@ struct ContentView: View {
                         candidates: $candidates,
                         isRecognizing: $isRecognizing,
                         onCompare: {
+                            let name = productName
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                            guard !name.isEmpty else {
+                                return
+                            }
+
+                            compareProductName = name
+                            compareBarcode = detectedBarcode
                             path.append(.compare)
                         }
                     )
 
                 case .compare:
                     CompareView(
-                        productName: productName,
-                        barcode: detectedBarcode
+                        productName:
+                            compareProductName.isEmpty
+                            ? productName
+                            : compareProductName,
+                        barcode:
+                            compareBarcode.isEmpty
+                            ? detectedBarcode
+                            : compareBarcode
                     )
                 }
             }
