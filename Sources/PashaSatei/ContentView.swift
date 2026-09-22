@@ -104,9 +104,9 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
-                hasPreviousResult: hasPreviousSearchResult,
+                hasPreviousResult: selectedImage != nil,
                 onOpenPreviousResult: {
-                    if hasPreviousSearchResult {
+                    if selectedImage != nil {
                         path.append(.result)
                     }
                 }
@@ -452,6 +452,29 @@ struct HomeView: View {
                         )
                     }
 
+
+                    if hasPreviousResult {
+                        Button(action: onOpenPreviousResult) {
+                            Label(
+                                "前回の検索結果を見る",
+                                systemImage: "clock.arrow.circlepath"
+                            )
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .foregroundStyle(green)
+                            .background(green.opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(
+                                        green.opacity(0.35),
+                                        lineWidth: 1
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     Button {
                         showCamera = true
                     } label: {
@@ -501,28 +524,6 @@ struct HomeView: View {
                         )
                     }
                     .foregroundStyle(.white)
-
-                    if hasPreviousResult {
-                        Button(action: onOpenPreviousResult) {
-                            Label(
-                                "前回の検索結果を見る",
-                                systemImage: "clock.arrow.circlepath"
-                            )
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .foregroundStyle(green)
-                            .background(green.opacity(0.10))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(
-                                        green.opacity(0.35),
-                                        lineWidth: 1
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
                 .padding(18)
             }
