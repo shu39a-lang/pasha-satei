@@ -102,7 +102,13 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             HomeView(
                 selectedPhoto: $selectedPhoto,
-                showCamera: $showCamera
+                showCamera: $showCamera,
+                hasPreviousResult: selectedImage != nil && !productName.isEmpty,
+                onOpenPreviousResult: {
+                    if selectedImage != nil && !productName.isEmpty {
+                        path.append(.result)
+                    }
+                }
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
@@ -285,6 +291,9 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
+
+    let hasPreviousResult: Bool
+    let onOpenPreviousResult: () -> Void
 
     private let green = Color(
         red: 39 / 255,
@@ -483,6 +492,34 @@ struct HomeView: View {
                         )
                     }
                     .foregroundStyle(.white)
+
+                    if hasPreviousResult {
+                        Button(
+                            action: onOpenPreviousResult
+                        ) {
+                            Label(
+                                "前回の検索結果を見る",
+                                systemImage: "clock.arrow.circlepath"
+                            )
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .foregroundStyle(green)
+                            .background(
+                                green.opacity(0.10)
+                            )
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: 18
+                                )
+                                .stroke(
+                                    green.opacity(0.35),
+                                    lineWidth: 1
+                                )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(18)
             }
