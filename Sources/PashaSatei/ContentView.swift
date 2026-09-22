@@ -1894,7 +1894,7 @@ enum RakumaPriceAPI {
             forHTTPHeaderField: "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 20
+        request.timeoutInterval = 35
 
         do {
             let (data, response) = try await URLSession.shared.data(
