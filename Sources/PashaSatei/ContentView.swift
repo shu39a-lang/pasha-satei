@@ -2200,6 +2200,46 @@ enum GeminiProductAPI {
         }
     }
 
+    private static func centerCrop(
+        _ image: UIImage
+    ) -> UIImage {
+        guard let cgImage = image.cgImage else {
+            return image
+        }
+
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+
+        guard width > 0,
+              height > 0 else {
+            return image
+        }
+
+        // Keep a generous 82% center region so a slightly off-center product
+        // is still retained while background / nearby cases are reduced.
+        let cropScale: CGFloat = 0.82
+        let cropWidth = width * cropScale
+        let cropHeight = height * cropScale
+
+        let rect = CGRect(
+            x: (width - cropWidth) / 2,
+            y: (height - cropHeight) / 2,
+            width: cropWidth,
+            height: cropHeight
+        ).integral
+
+        guard let cropped =
+                cgImage.cropping(to: rect) else {
+            return image
+        }
+
+        return UIImage(
+            cgImage: cropped,
+            scale: image.scale,
+            orientation: image.imageOrientation
+        )
+    }
+
     static func analyze(
         image: UIImage,
         ocrText: String,
@@ -2214,9 +2254,18 @@ enum GeminiProductAPI {
         let uploadImage =
             preparedImage(image)
 
+        let focusedImage =
+            preparedImage(
+                centerCrop(image)
+            )
+
         guard let imageData =
                 uploadImage.jpegData(
                     compressionQuality: 0.72
+                ),
+              let focusedImageData =
+                focusedImage.jpegData(
+                    compressionQuality: 0.70
                 ) else {
             return nil
         }
@@ -2229,6 +2278,9 @@ enum GeminiProductAPI {
         let body: [String: Any] = [
             "imageBase64":
                 imageData
+                    .base64EncodedString(),
+            "focusedImageBase64":
+                focusedImageData
                     .base64EncodedString(),
             "ocrText": compactOCR,
             "barcode": barcode
