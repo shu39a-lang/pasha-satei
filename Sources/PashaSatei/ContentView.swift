@@ -3006,6 +3006,7 @@ struct NearbyBuybackStore: Identifiable {
     let name: String
     let address: String
     let phoneNumber: String?
+    let websiteURL: URL?
     let distanceMeters: CLLocationDistance
     let mapItem: MKMapItem
 
@@ -3306,6 +3307,8 @@ final class NearbyBuybackStoreLocator:
                         address: address,
                         phoneNumber:
                             item.phoneNumber,
+                        websiteURL:
+                            item.url,
                         distanceMeters:
                             distance,
                         mapItem: item
@@ -3601,6 +3604,23 @@ struct NearbyBuybackStoreRow: View {
                             "電話",
                             systemImage:
                                 "phone.fill"
+                        )
+                    }
+                    .buttonStyle(
+                        NearbyStoreActionStyle()
+                    )
+                }
+
+                if let websiteURL =
+                        store.websiteURL {
+                    Link(
+                        destination:
+                            websiteURL
+                    ) {
+                        Label(
+                            "店舗サイト",
+                            systemImage:
+                                "safari.fill"
                         )
                     }
                     .buttonStyle(
