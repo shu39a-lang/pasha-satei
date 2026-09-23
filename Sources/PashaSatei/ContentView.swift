@@ -1594,6 +1594,7 @@ struct UsedPriceCard: View {
                     .sorted { $0.price > $1.price }
                     .prefix(5)
             )
+        }
     }
 
     private var selectedBandTitle: String {
