@@ -3180,17 +3180,39 @@ final class NearbyBuybackStoreLocator:
     ) {
         isLoading = true
         message =
-            "近くの買取店を検索しています…"
+            "大手の買取店を検索しています…"
+
+        // 一般利用しやすく、家電・スマホ・PC・ゲーム等を扱う
+        // 大手チェーンを中心に検索する。
+        let preferredChains = [
+            "BOOKOFF",
+            "ブックオフ",
+            "HARD OFF",
+            "ハードオフ",
+            "OFF HOUSE",
+            "オフハウス",
+            "GEO",
+            "ゲオ"
+        ]
+
+        // 高級ブランド・衣類中心など、今回の用途に合わない店を除外。
+        let excludedKeywords = [
+            "ブランド",
+            "古着",
+            "洋服",
+            "衣料",
+            "着物",
+            "ジュエリー",
+            "宝石",
+            "貴金属",
+            "時計専門",
+            "バッグ専門"
+        ]
 
         let searchQueries =
-            Array(
-                Set([
-                    pendingSearchTerm,
-                    "買取店",
-                    "リサイクルショップ",
-                    "中古 買取"
-                ])
-            )
+            preferredChains.map {
+                "\($0) \(pendingSearchTerm)"
+            }
 
         let searchRadius:
             CLLocationDistance = 12000
@@ -3267,7 +3289,10 @@ final class NearbyBuybackStoreLocator:
                                 itemLocation
                         )
 
-                    guard distance <= searchRadius else {
+                    guard
+                        distance
+                        <= searchRadius
+                    else {
                         return nil
                     }
 
@@ -3277,7 +3302,54 @@ final class NearbyBuybackStoreLocator:
                                 in:
                                     .whitespacesAndNewlines
                             )
-                        ?? "買取店"
+                        ?? ""
+
+                    guard
+                        !name.isEmpty
+                    else {
+                        return nil
+                    }
+
+                    let upperName =
+                        name.uppercased()
+
+                    let isPreferredChain =
+                        preferredChains.contains {
+                            chain in
+
+                            upperName.contains(
+                                chain.uppercased()
+                            )
+                        }
+
+                    guard
+                        isPreferredChain
+                    else {
+                        return nil
+                    }
+
+                    let isExcluded =
+                        excludedKeywords.contains {
+                            keyword in
+
+                            name.contains(
+                                keyword
+                            )
+                        }
+
+                    guard
+                        !isExcluded
+                    else {
+                        return nil
+                    }
+
+                    // ホームページのない店舗は一切表示しない。
+                    guard
+                        let websiteURL =
+                            item.url
+                    else {
+                        return nil
+                    }
 
                     let address =
                         [
@@ -3296,7 +3368,9 @@ final class NearbyBuybackStoreLocator:
                     let key =
                         "\(name)|\(address)"
 
-                    guard !seen.contains(key) else {
+                    guard
+                        !seen.contains(key)
+                    else {
                         return nil
                     }
 
@@ -3308,7 +3382,7 @@ final class NearbyBuybackStoreLocator:
                         phoneNumber:
                             item.phoneNumber,
                         websiteURL:
-                            item.url,
+                            websiteURL,
                         distanceMeters:
                             distance,
                         mapItem: item
@@ -3328,13 +3402,13 @@ final class NearbyBuybackStoreLocator:
 
             if self.stores.isEmpty {
                 self.message =
-                    "現在地から12km以内に買取店が見つかりませんでした"
+                    "12km以内に条件に合う大手買取店が見つかりませんでした"
             } else if self.stores.count < 3 {
                 self.message =
-                    "現在地から12km以内の近い店舗を表示しています"
+                    "近くの大手買取店を表示しています"
             } else {
                 self.message =
-                    "現在地から近い順に3件表示しています"
+                    "大手買取店を近い順に3件表示しています"
             }
         }
     }
@@ -3363,7 +3437,7 @@ struct NearbyBuybackStoresCard: View {
                     alignment: .leading,
                     spacing: 3
                 ) {
-                    Text("近くの買取店")
+                    Text("近くの大手買取店")
                         .font(.headline)
 
                     Text(locator.message)
