@@ -5,7 +5,12 @@ import Vision
 
 enum AppRoute: Hashable {
     case result
-    case compare
+    case compare(
+        productName: String,
+        barcode: String,
+        brand: String,
+        modelNumber: String
+    )
 }
 
 struct Marketplace: Identifiable {
@@ -127,16 +132,39 @@ struct ContentView: View {
                         candidates: $candidates,
                         isRecognizing: $isRecognizing,
                         onCompare: {
-                            path.append(.compare)
+                            let selectedName =
+                                productName
+                                    .trimmingCharacters(
+                                        in: .whitespacesAndNewlines
+                                    )
+
+                            guard !selectedName.isEmpty,
+                                  !isRecognizing else {
+                                return
+                            }
+
+                            path.append(
+                                .compare(
+                                    productName: selectedName,
+                                    barcode: detectedBarcode,
+                                    brand: brand,
+                                    modelNumber: modelNumber
+                                )
+                            )
                         }
                     )
 
-                case .compare:
+                case let .compare(
+                    selectedProductName,
+                    selectedBarcode,
+                    selectedBrand,
+                    selectedModelNumber
+                ):
                     CompareView(
-                        productName: productName,
-                        barcode: detectedBarcode,
-                        brand: brand,
-                        modelNumber: modelNumber
+                        productName: selectedProductName,
+                        barcode: selectedBarcode,
+                        brand: selectedBrand,
+                        modelNumber: selectedModelNumber
                     )
                 }
             }
@@ -877,6 +905,24 @@ struct ResultView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(
+                        isRecognizing
+                        || productName
+                            .trimmingCharacters(
+                                in: .whitespacesAndNewlines
+                            )
+                            .isEmpty
+                    )
+                    .opacity(
+                        isRecognizing
+                        || productName
+                            .trimmingCharacters(
+                                in: .whitespacesAndNewlines
+                            )
+                            .isEmpty
+                        ? 0.55
+                        : 1.0
+                    )
                 }
                 .padding(16)
             }
@@ -1476,28 +1522,65 @@ struct CompareView: View {
 
     @MainActor
     private func loadRakumaPrice() async {
-        guard !productName
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .isEmpty else {
+        let candidates =
+            stableSearchCandidates
+
+        guard !candidates.isEmpty else {
             return
         }
 
         isLoadingRakuma = true
         rakumaError = ""
 
-        let result =
-            await RakumaPriceAPI.fetch(
-                productName: productName
+        var bestResult: YahooPriceResponse?
+
+        for query in candidates {
+            let result =
+                await RakumaPriceAPI.fetch(
+                    productName: query
+                )
+
+            if let result,
+               result.ok {
+                if bestResult == nil
+                    || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                }
+
+                if result.count >= 5 {
+                    break
+                }
+            }
+        }
+
+        // One final retry of the most stable query if Rakuma returned nothing.
+        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+            try? await Task.sleep(
+                nanoseconds: 800_000_000
             )
 
-        if let result, result.ok {
-            rakumaPrice = result
+            if let retryQuery = candidates.first {
+                let retry =
+                    await RakumaPriceAPI.fetch(
+                        productName: retryQuery
+                    )
+
+                if let retry,
+                   retry.ok,
+                   retry.count > (bestResult?.count ?? 0) {
+                    bestResult = retry
+                }
+            }
+        }
+
+        rakumaPrice = bestResult
+
+        if let bestResult,
+           bestResult.ok {
+            rakumaError = ""
         } else {
-            rakumaPrice = result
             rakumaError =
-                result?.error?
+                bestResult?.error?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
