@@ -3177,118 +3177,161 @@ final class NearbyBuybackStoreLocator:
     private func searchNearby(
         from location: CLLocation
     ) {
-        let request =
-            MKLocalSearch.Request()
+        isLoading = true
+        message =
+            "近くの買取店を検索しています…"
 
-        request.naturalLanguageQuery =
-            pendingSearchTerm
-
-        request.region =
-            MKCoordinateRegion(
-                center:
-                    location.coordinate,
-                latitudinalMeters: 15000,
-                longitudinalMeters: 15000
+        let searchQueries =
+            Array(
+                Set([
+                    pendingSearchTerm,
+                    "買取店",
+                    "リサイクルショップ",
+                    "中古 買取"
+                ])
             )
 
-        let search =
+        let searchRadius:
+            CLLocationDistance = 12000
+
+        let group =
+            DispatchGroup()
+
+        let lock =
+            NSLock()
+
+        var collected:
+            [MKMapItem] = []
+
+        for query in searchQueries {
+            group.enter()
+
+            let request =
+                MKLocalSearch.Request()
+
+            request.naturalLanguageQuery =
+                query
+
+            request.region =
+                MKCoordinateRegion(
+                    center:
+                        location.coordinate,
+                    latitudinalMeters:
+                        searchRadius * 2,
+                    longitudinalMeters:
+                        searchRadius * 2
+                )
+
             MKLocalSearch(
                 request: request
             )
+            .start {
+                response,
+                _ in
 
-        search.start {
-            [weak self]
-            response,
-            error in
-
-            guard let self else {
-                return
-            }
-
-            Task { @MainActor in
-                self.isLoading = false
-
-                guard error == nil,
-                      let items =
-                        response?.mapItems,
-                      !items.isEmpty else {
-                    self.stores = []
-                    self.message =
-                        "近くの買取店が見つかりませんでした"
-                    return
+                if let items =
+                        response?.mapItems {
+                    lock.lock()
+                    collected.append(
+                        contentsOf:
+                            items
+                    )
+                    lock.unlock()
                 }
 
-                var seen =
-                    Set<String>()
+                group.leave()
+            }
+        }
 
-                self.stores =
-                    items
-                    .compactMap {
-                        item
-                        -> NearbyBuybackStore? in
+        group.notify(
+            queue: .main
+        ) {
+            var seen =
+                Set<String>()
 
-                        guard let itemLocation =
-                                item.placemark.location else {
-                            return nil
-                        }
+            let candidates =
+                collected
+                .compactMap {
+                    item
+                    -> NearbyBuybackStore? in
 
-                        let name =
-                            item.name?
-                                .trimmingCharacters(
-                                    in:
-                                        .whitespacesAndNewlines
-                                )
-                            ?? "買取店"
+                    guard let itemLocation =
+                            item.placemark.location else {
+                        return nil
+                    }
 
-                        let address =
-                            [
-                                item.placemark
-                                    .administrativeArea,
-                                item.placemark
-                                    .locality,
-                                item.placemark
-                                    .subLocality,
-                                item.placemark
-                                    .thoroughfare
-                            ]
-                            .compactMap { $0 }
-                            .joined()
-
-                        let key =
-                            "\(name)|\(address)"
-
-                        guard
-                            !seen.contains(key)
-                        else {
-                            return nil
-                        }
-
-                        seen.insert(key)
-
-                        return NearbyBuybackStore(
-                            name: name,
-                            address: address,
-                            phoneNumber:
-                                item.phoneNumber,
-                            distanceMeters:
-                                location.distance(
-                                    from:
-                                        itemLocation
-                                ),
-                            mapItem: item
+                    let distance =
+                        location.distance(
+                            from:
+                                itemLocation
                         )
-                    }
-                    .sorted {
-                        $0.distanceMeters
-                        < $1.distanceMeters
-                    }
-                    .prefix(3)
-                    .map { $0 }
 
+                    guard distance <= searchRadius else {
+                        return nil
+                    }
+
+                    let name =
+                        item.name?
+                            .trimmingCharacters(
+                                in:
+                                    .whitespacesAndNewlines
+                            )
+                        ?? "買取店"
+
+                    let address =
+                        [
+                            item.placemark
+                                .administrativeArea,
+                            item.placemark
+                                .locality,
+                            item.placemark
+                                .subLocality,
+                            item.placemark
+                                .thoroughfare
+                        ]
+                        .compactMap { $0 }
+                        .joined()
+
+                    let key =
+                        "\(name)|\(address)"
+
+                    guard !seen.contains(key) else {
+                        return nil
+                    }
+
+                    seen.insert(key)
+
+                    return NearbyBuybackStore(
+                        name: name,
+                        address: address,
+                        phoneNumber:
+                            item.phoneNumber,
+                        distanceMeters:
+                            distance,
+                        mapItem: item
+                    )
+                }
+                .sorted {
+                    $0.distanceMeters
+                    < $1.distanceMeters
+                }
+
+            self.stores =
+                Array(
+                    candidates.prefix(3)
+                )
+
+            self.isLoading = false
+
+            if self.stores.isEmpty {
                 self.message =
-                    self.stores.isEmpty
-                    ? "近くの買取店が見つかりませんでした"
-                    : "現在地から近い順に表示しています"
+                    "現在地から12km以内に買取店が見つかりませんでした"
+            } else if self.stores.count < 3 {
+                self.message =
+                    "現在地から12km以内の近い店舗を表示しています"
+            } else {
+                self.message =
+                    "現在地から近い順に3件表示しています"
             }
         }
     }
