@@ -1209,14 +1209,19 @@ struct CompareView: View {
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: productName) {
+            // First load after a build/cold start can be slower.
+            // Load the two fast marketplaces first, then Rakuma.
+            // This prevents the heavier Rakuma request from competing with
+            // Mercari/Yahoo on the very first comparison screen.
             async let mercariTask: Void = loadMercariPrice()
             async let yahooTask: Void = loadYahooPrice()
-            async let rakumaTask: Void = loadRakumaPrice()
+
             _ = await (
                 mercariTask,
-                yahooTask,
-                rakumaTask
+                yahooTask
             )
+
+            await loadRakumaPrice()
         }
     }
 
@@ -1346,6 +1351,28 @@ struct CompareView: View {
             }
         }
 
+        // A first request can hit a freshly started Cloud Run instance.
+        // Retry once automatically instead of making the user go back and
+        // select another candidate to warm the service.
+        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+            try? await Task.sleep(
+                nanoseconds: 800_000_000
+            )
+
+            if let retryQuery = candidates.first {
+                let retry =
+                    await MercariPriceAPI.fetch(
+                        productName: retryQuery
+                    )
+
+                if let retry,
+                   retry.ok,
+                   retry.count > (bestResult?.count ?? 0) {
+                    bestResult = retry
+                }
+            }
+        }
+
         mercariPrice = bestResult
 
         if let bestResult,
@@ -1405,6 +1432,28 @@ struct CompareView: View {
                 if result.count >= 8 {
                     break
                 }
+            }
+        }
+
+        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+            try? await Task.sleep(
+                nanoseconds: 800_000_000
+            )
+
+            let retryQuery =
+                queries.first
+                ?? productName
+
+            let retry =
+                await YahooPriceAPI.fetch(
+                    productName: retryQuery,
+                    barcode: barcode
+                )
+
+            if let retry,
+               retry.ok,
+               retry.count > (bestResult?.count ?? 0) {
+                bestResult = retry
             }
         }
 
