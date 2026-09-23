@@ -425,158 +425,276 @@ struct HomeView: View {
 
             GeometryReader { geometry in
                 let compact =
-                    geometry.size.height < 760
+                    geometry.size.height < 780
 
                 VStack(
                     alignment: .leading,
-                    spacing: compact ? 8 : 10
+                    spacing: compact ? 7 : 9
                 ) {
-                    HStack(
-                        alignment: .top,
-                        spacing: 14
-                    ) {
-                        VStack(
-                            alignment: .leading,
-                            spacing: 5
+                    // MARK: Hero
+                    ZStack(alignment: .topLeading) {
+                        RoundedRectangle(
+                            cornerRadius: 26
+                        )
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.black.opacity(0.16),
+                                    Color(
+                                        red: 0 / 255,
+                                        green: 55 / 255,
+                                        blue: 35 / 255
+                                    ).opacity(0.52)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                        HStack(
+                            alignment: .top,
+                            spacing: 8
                         ) {
-                            HStack(spacing: 3) {
-                                Text("パシャ")
-                                    .font(
-                                        .system(
-                                            size:
-                                                compact
-                                                ? 34
-                                                : 39,
-                                            weight: .black,
-                                            design: .rounded
-                                        )
+                            VStack(
+                                alignment: .leading,
+                                spacing: 6
+                            ) {
+                                HStack(spacing: 2) {
+                                    Text("パシャ")
+                                        .foregroundStyle(.white)
+
+                                    Text("査定")
+                                        .foregroundStyle(green)
+                                }
+                                .font(
+                                    .system(
+                                        size:
+                                            compact
+                                            ? 32
+                                            : 36,
+                                        weight: .black,
+                                        design: .rounded
+                                    )
+                                )
+
+                                Text(
+                                    "写真から、売れる相場をすばやくチェック"
+                                )
+                                .font(
+                                    .system(
+                                        size:
+                                            compact
+                                            ? 12.5
+                                            : 13.5,
+                                        weight: .bold
+                                    )
+                                )
+                                .foregroundStyle(.white.opacity(0.92))
+                                .lineLimit(2)
+
+                                Text(
+                                    "メルカリ・Yahoo!フリマ・楽天ラクマの\n価格をまとめて比較"
+                                )
+                                .font(
+                                    .system(
+                                        size:
+                                            compact
+                                            ? 10.5
+                                            : 11.5,
+                                        weight: .medium
+                                    )
+                                )
+                                .foregroundStyle(.secondary)
+                                .lineSpacing(1)
+
+                                HStack(spacing: 10) {
+                                    MarketplaceLogoTile(
+                                        mark: "m",
+                                        label: "メルカリ",
+                                        accent: Color.red
                                     )
 
-                                Text("査定")
-                                    .font(
-                                        .system(
-                                            size:
-                                                compact
-                                                ? 34
-                                                : 39,
-                                            weight: .black,
-                                            design: .rounded
-                                        )
+                                    MarketplaceLogoTile(
+                                        mark: "Y!",
+                                        label: "Yahoo!フリマ",
+                                        accent: Color.red
                                     )
-                                    .foregroundStyle(green)
+
+                                    MarketplaceLogoTile(
+                                        mark: "R",
+                                        label: "楽天ラクマ",
+                                        accent: green
+                                    )
+                                }
                             }
 
-                            Text(
-                                "売れる前に、相場をチェック。"
-                            )
-                            .font(
-                                .system(
-                                    size:
+                            Spacer(minLength: 2)
+
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        green.opacity(0.16)
+                                    )
+                                    .frame(
+                                        width:
+                                            compact
+                                            ? 124
+                                            : 138,
+                                        height:
+                                            compact
+                                            ? 124
+                                            : 138
+                                    )
+
+                                RoundedRectangle(
+                                    cornerRadius: 22
+                                )
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(
+                                                red: 18 / 255,
+                                                green: 24 / 255,
+                                                blue: 23 / 255
+                                            ),
+                                            Color.black
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(
+                                        cornerRadius: 22
+                                    )
+                                    .stroke(
+                                        green.opacity(0.58),
+                                        lineWidth: 1
+                                    )
+                                )
+                                .frame(
+                                    width:
                                         compact
-                                        ? 16
-                                        : 18,
-                                    weight: .bold
+                                        ? 84
+                                        : 94,
+                                    height:
+                                        compact
+                                        ? 150
+                                        : 166
                                 )
-                            )
-                            .foregroundStyle(.white)
-
-                            Text(
-                                "写真からかんたん査定"
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        }
-
-                        Spacer(minLength: 4)
-
-                        ZStack {
-                            RoundedRectangle(
-                                cornerRadius: 24
-                            )
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        green.opacity(0.30),
-                                        Color(
-                                            red: 4 / 255,
-                                            green: 30 / 255,
-                                            blue: 22 / 255
+                                .rotationEffect(.degrees(7))
+                                .overlay {
+                                    VStack(spacing: 7) {
+                                        Image(
+                                            systemName:
+                                                "viewfinder"
                                         )
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                                        .font(
+                                            .system(
+                                                size:
+                                                    compact
+                                                    ? 34
+                                                    : 40,
+                                                weight: .bold
+                                            )
+                                        )
+                                        .foregroundStyle(green)
+
+                                        Text("👟")
+                                            .font(
+                                                .system(
+                                                    size:
+                                                        compact
+                                                        ? 29
+                                                        : 34
+                                                )
+                                            )
+                                    }
+                                    .rotationEffect(.degrees(7))
+                                }
+
+                                PriceBubble(
+                                    title: "メルカリ",
+                                    price: "12,980円"
                                 )
-                            )
+                                .offset(
+                                    x:
+                                        compact
+                                        ? 31
+                                        : 36,
+                                    y:
+                                        compact
+                                        ? -47
+                                        : -52
+                                )
+
+                                PriceBubble(
+                                    title: "Yahoo!フリマ",
+                                    price: "13,500円"
+                                )
+                                .offset(
+                                    x:
+                                        compact
+                                        ? -36
+                                        : -42,
+                                    y:
+                                        compact
+                                        ? 40
+                                        : 46
+                                )
+
+                                PriceBubble(
+                                    title: "楽天ラクマ",
+                                    price: "11,800円"
+                                )
+                                .offset(
+                                    x:
+                                        compact
+                                        ? 38
+                                        : 45,
+                                    y:
+                                        compact
+                                        ? 49
+                                        : 57
+                                )
+                            }
                             .frame(
                                 width:
                                     compact
-                                    ? 108
-                                    : 122,
+                                    ? 146
+                                    : 160,
                                 height:
                                     compact
-                                    ? 92
-                                    : 104
+                                    ? 174
+                                    : 190
                             )
-                            .overlay(
-                                RoundedRectangle(
-                                    cornerRadius: 24
-                                )
-                                .stroke(
-                                    green.opacity(0.45),
-                                    lineWidth: 1
-                                )
-                            )
-
-                            Image(
-                                systemName:
-                                    "iphone.gen3.radiowaves.left.and.right"
-                            )
-                            .font(
-                                .system(
-                                    size:
-                                        compact
-                                        ? 46
-                                        : 54,
-                                    weight: .medium
-                                )
-                            )
-                            .foregroundStyle(green)
                         }
-                    }
-
-                    HStack(spacing: 6) {
-                        PremiumFeatureItem(
-                            icon: "sparkles",
-                            title: "商品名を自動判定",
-                            subtitle: "写真から商品を特定"
-                        )
-
-                        PremiumFeatureItem(
-                            icon: "chart.bar.fill",
-                            title: "3サイト相場を比較",
-                            subtitle: "価格をまとめて確認"
-                        )
-
-                        PremiumFeatureItem(
-                            icon: "arrow.up.right.square.fill",
-                            title: "出品ページへすぐ移動",
-                            subtitle: "相場確認から出品へ"
+                        .padding(
+                            compact
+                            ? 13
+                            : 15
                         )
                     }
-                    .padding(.vertical, compact ? 5 : 7)
+                    .frame(
+                        height:
+                            compact
+                            ? 194
+                            : 212
+                    )
 
+                    // MARK: Guide
                     Button {
                         showUsageGuide = true
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
                                 RoundedRectangle(
-                                    cornerRadius: 13
+                                    cornerRadius: 12
                                 )
-                                .fill(green.opacity(0.14))
+                                .fill(green.opacity(0.13))
                                 .frame(
-                                    width: 48,
-                                    height: 48
+                                    width: 46,
+                                    height: 46
                                 )
 
                                 Image(
@@ -597,10 +715,11 @@ struct HomeView: View {
                                 .font(.headline)
 
                                 Text(
-                                    "精度アップのポイントを確認"
+                                    "正確に判定するためのポイントを見る"
                                 )
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                             }
 
                             Spacer()
@@ -610,24 +729,20 @@ struct HomeView: View {
                                     "chevron.right"
                             )
                             .font(.headline)
-                            .foregroundStyle(.white.opacity(0.85))
                         }
-                        .padding(
-                            .horizontal,
-                            14
-                        )
+                        .padding(.horizontal, 14)
                         .frame(
                             maxWidth: .infinity,
                             minHeight:
                                 compact
-                                ? 58
-                                : 64
+                                ? 56
+                                : 60
                         )
                         .background(
                             LinearGradient(
                                 colors: [
-                                    green.opacity(0.15),
-                                    Color.white.opacity(0.05)
+                                    green.opacity(0.13),
+                                    Color.white.opacity(0.045)
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
@@ -638,7 +753,7 @@ struct HomeView: View {
                                 cornerRadius: 18
                             )
                             .stroke(
-                                green.opacity(0.38),
+                                green.opacity(0.40),
                                 lineWidth: 1
                             )
                         )
@@ -651,10 +766,38 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.white)
 
+                    // MARK: Feature row
+                    HStack(spacing: 4) {
+                        PremiumFeatureItem(
+                            icon: "sparkles",
+                            title: "AI商品判定",
+                            subtitle: "写真から商品名・型番を特定"
+                        )
+
+                        PremiumFeatureItem(
+                            icon: "chart.bar.fill",
+                            title: "3サイト相場比較",
+                            subtitle: "3サイトの価格を一括比較"
+                        )
+
+                        PremiumFeatureItem(
+                            icon: "tag.fill",
+                            title: "出品までスムーズ",
+                            subtitle: "相場を見てすぐ出品"
+                        )
+                    }
+                    .frame(
+                        height:
+                            compact
+                            ? 74
+                            : 82
+                    )
+
+                    // MARK: Camera
                     Button {
                         showCamera = true
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: 13) {
                             Image(
                                 systemName:
                                     "camera.fill"
@@ -677,8 +820,8 @@ struct HomeView: View {
                             maxWidth: .infinity,
                             minHeight:
                                 compact
-                                ? 60
-                                : 68
+                                ? 58
+                                : 64
                         )
                     }
                     .buttonStyle(.plain)
@@ -687,9 +830,9 @@ struct HomeView: View {
                         LinearGradient(
                             colors: [
                                 Color(
-                                    red: 78 / 255,
-                                    green: 235 / 255,
-                                    blue: 151 / 255
+                                    red: 82 / 255,
+                                    green: 237 / 255,
+                                    blue: 153 / 255
                                 ),
                                 green
                             ],
@@ -698,17 +841,17 @@ struct HomeView: View {
                         )
                     )
                     .shadow(
-                        color:
-                            green.opacity(0.25),
-                        radius: 14,
-                        y: 5
+                        color: green.opacity(0.27),
+                        radius: 13,
+                        y: 4
                     )
                     .clipShape(
                         RoundedRectangle(
-                            cornerRadius: 19
+                            cornerRadius: 18
                         )
                     )
 
+                    // MARK: Photo
                     PhotosPicker(
                         selection: $selectedPhoto,
                         matching: .images
@@ -736,29 +879,30 @@ struct HomeView: View {
                             maxWidth: .infinity,
                             minHeight:
                                 compact
-                                ? 54
-                                : 60
+                                ? 50
+                                : 55
                         )
                         .background(
                             Color.white.opacity(0.07)
                         )
                         .overlay(
                             RoundedRectangle(
-                                cornerRadius: 18
+                                cornerRadius: 17
                             )
                             .stroke(
-                                Color.white.opacity(0.16),
+                                Color.white.opacity(0.18),
                                 lineWidth: 1
                             )
                         )
                         .clipShape(
                             RoundedRectangle(
-                                cornerRadius: 18
+                                cornerRadius: 17
                             )
                         )
                     }
                     .foregroundStyle(.white)
 
+                    // MARK: Previous result - always below "写真を選ぶ"
                     if hasPreviousResult {
                         Button(
                             action:
@@ -788,24 +932,24 @@ struct HomeView: View {
                                 maxWidth: .infinity,
                                 minHeight:
                                     compact
-                                    ? 46
-                                    : 50
+                                    ? 44
+                                    : 48
                             )
                             .background(
-                                green.opacity(0.08)
+                                green.opacity(0.075)
                             )
                             .overlay(
                                 RoundedRectangle(
-                                    cornerRadius: 16
+                                    cornerRadius: 15
                                 )
                                 .stroke(
-                                    green.opacity(0.35),
+                                    green.opacity(0.34),
                                     lineWidth: 1
                                 )
                             )
                             .clipShape(
                                 RoundedRectangle(
-                                    cornerRadius: 16
+                                    cornerRadius: 15
                                 )
                             )
                         }
@@ -813,82 +957,11 @@ struct HomeView: View {
                         .foregroundStyle(green)
                     }
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: compact ? 5 : 7
-                    ) {
-                        Text(
-                            "より正確な査定のために"
-                        )
-                        .font(.caption.bold())
-                        .foregroundStyle(
-                            .white.opacity(0.82)
-                        )
-
-                        HStack(
-                            alignment: .top,
-                            spacing: 10
-                        ) {
-                            Label(
-                                "結果が違う時は\n角度を変えて再撮影",
-                                systemImage:
-                                    "camera.viewfinder"
-                            )
-
-                            Divider()
-                                .overlay(
-                                    Color.white.opacity(0.12)
-                                )
-
-                            Label(
-                                "商品名や型番を入力すると\nさらに正確",
-                                systemImage:
-                                    "text.badge.checkmark"
-                            )
-                        }
-                        .font(
-                            .system(
-                                size:
-                                    compact
-                                    ? 10.5
-                                    : 11.5,
-                                weight: .medium
-                            )
-                        )
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(
-                        compact
-                        ? 11
-                        : 13
-                    )
-                    .frame(
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
-                    .background(
-                        Color.white.opacity(0.045)
-                    )
-                    .overlay(
-                        RoundedRectangle(
-                            cornerRadius: 16
-                        )
-                        .stroke(
-                            green.opacity(0.18),
-                            lineWidth: 1
-                        )
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 16
-                        )
-                    )
-
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 16)
+                .padding(.top, 5)
+                .padding(.bottom, 6)
             }
         }
         .navigationBarHidden(true)
@@ -898,6 +971,105 @@ struct HomeView: View {
         ) {
             UsageGuideView()
         }
+    }
+}
+
+struct MarketplaceLogoTile: View {
+    let mark: String
+    let label: String
+    let accent: Color
+
+    var body: some View {
+        VStack(spacing: 3) {
+            RoundedRectangle(
+                cornerRadius: 8
+            )
+            .fill(Color.white)
+            .frame(
+                width: 34,
+                height: 34
+            )
+            .overlay(
+                Text(mark)
+                    .font(
+                        .system(
+                            size: 15,
+                            weight: .black
+                        )
+                    )
+                    .foregroundStyle(accent)
+            )
+
+            Text(label)
+                .font(.system(size: 8.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(1)
+        }
+    }
+}
+
+struct PriceBubble: View {
+    let title: String
+    let price: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 1
+        ) {
+            Text(title)
+                .font(
+                    .system(
+                        size: 7,
+                        weight: .semibold
+                    )
+                )
+                .foregroundStyle(.white.opacity(0.9))
+
+            Text(price)
+                .font(
+                    .system(
+                        size: 9,
+                        weight: .black
+                    )
+                )
+                .foregroundStyle(green)
+        }
+        .padding(
+            .horizontal,
+            7
+        )
+        .padding(
+            .vertical,
+            5
+        )
+        .background(
+            Color(
+                red: 4 / 255,
+                green: 24 / 255,
+                blue: 18 / 255
+            ).opacity(0.96)
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 8
+            )
+            .stroke(
+                green.opacity(0.60),
+                lineWidth: 1
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 8
+            )
+        )
     }
 }
 
