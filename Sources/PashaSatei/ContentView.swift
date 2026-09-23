@@ -1159,6 +1159,73 @@ struct RemoteGuitarHero: View {
     }
 }
 
+struct PriceBubble: View {
+    let title: String
+    let price: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 1
+        ) {
+            Text(title)
+                .font(
+                    .system(
+                        size: 7,
+                        weight: .semibold
+                    )
+                )
+                .foregroundStyle(
+                    .white.opacity(0.90)
+                )
+
+            Text(price)
+                .font(
+                    .system(
+                        size: 9,
+                        weight: .black
+                    )
+                )
+                .foregroundStyle(green)
+        }
+        .padding(
+            .horizontal,
+            7
+        )
+        .padding(
+            .vertical,
+            5
+        )
+        .background(
+            Color(
+                red: 4 / 255,
+                green: 24 / 255,
+                blue: 18 / 255
+            ).opacity(0.96)
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 8
+            )
+            .stroke(
+                green.opacity(0.60),
+                lineWidth: 1
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 8
+            )
+        )
+    }
+}
+
 struct UsageGuideView: View {
     @Environment(\.dismiss)
     private var dismiss
