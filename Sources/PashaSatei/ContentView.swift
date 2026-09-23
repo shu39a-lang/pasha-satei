@@ -3212,8 +3212,8 @@ final class NearbyBuybackStoreLocator:
                       let items =
                         response?.mapItems,
                       !items.isEmpty else {
-                    stores = []
-                    message =
+                    self.stores = []
+                    self.message =
                         "近くの買取店が見つかりませんでした"
                     return
                 }
@@ -3221,7 +3221,7 @@ final class NearbyBuybackStoreLocator:
                 var seen =
                     Set<String>()
 
-                stores =
+                self.stores =
                     items
                     .compactMap {
                         item
@@ -3285,8 +3285,8 @@ final class NearbyBuybackStoreLocator:
                     .prefix(3)
                     .map { $0 }
 
-                message =
-                    stores.isEmpty
+                self.message =
+                    self.stores.isEmpty
                     ? "近くの買取店が見つかりませんでした"
                     : "現在地から近い順に表示しています"
             }
