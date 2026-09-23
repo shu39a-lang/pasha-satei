@@ -44,6 +44,9 @@
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>必要に応じて撮影した商品の写真を保存するために写真ライブラリを使用します。</string>
 
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>現在地から近い買取店を3件表示するために位置情報を使用します。</string>
+
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
