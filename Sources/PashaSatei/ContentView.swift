@@ -592,7 +592,7 @@ struct HomeHeroSection: View {
                 )
 
                 Text(
-                    "メルカリ・Yahoo!フリマ・楽天ラクマの\n価格をまとめて比較"
+                    "過去価格をまとめて比較"
                 )
                 .font(
                     .system(
@@ -631,386 +631,72 @@ struct HomeHeroSection: View {
 struct MarketplaceLogoRow: View {
     var body: some View {
         HStack(spacing: 10) {
-            MarketplaceRemoteLogoTile(
-                logoURL:
-                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Mercari_logo.svg?width=180",
-                label: "メルカリ"
-            )
-
-            MarketplaceRemoteLogoTile(
-                logoURL:
-                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Yahoo_Japan_Logo.svg?width=180",
-                label: "Yahoo!フリマ"
-            )
-
-            MarketplaceRemoteLogoTile(
-                logoURL:
-                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Rakuten_R_logo.svg?width=160",
-                label: "楽天ラクマ"
-            )
-        }
-    }
-}
-
-struct HomeGuideButton: View {
-    let compact: Bool
-    let action: () -> Void
-
-    private let green = Color(
-        red: 39 / 255,
-        green: 211 / 255,
-        blue: 119 / 255
-    )
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(
-                        cornerRadius: 13
-                    )
-                    .fill(
-                        green.opacity(0.15)
-                    )
-                    .frame(
-                        width: 50,
-                        height: 50
-                    )
-
-                    Image(
-                        systemName:
-                            "lightbulb.fill"
-                    )
-                    .font(.title3)
-                    .foregroundStyle(green)
-                }
-
-                VStack(
-                    alignment: .leading,
-                    spacing: 3
-                ) {
-                    Text(
-                        "使い方・撮影のコツ"
-                    )
-                    .font(.headline)
-
-                    Text(
-                        "正確に判定するためのポイントを見る"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                }
-
-                Spacer()
-
-                Image(
-                    systemName:
-                        "chevron.right"
-                )
-                .font(.headline)
-            }
-            .padding(.horizontal, 14)
-            .frame(
-                maxWidth: .infinity,
-                minHeight:
-                    compact
-                    ? 58
-                    : 64
-            )
-            .background(
-                LinearGradient(
-                    colors: [
-                        green.opacity(0.15),
-                        Color.white.opacity(0.05)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .overlay(
-                RoundedRectangle(
-                    cornerRadius: 18
-                )
-                .stroke(
-                    green.opacity(0.40),
-                    lineWidth: 1
-                )
-            )
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 18
-                )
-            )
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-    }
-}
-
-struct HomeFeatureRow: View {
-    let compact: Bool
-
-    var body: some View {
-        HStack(spacing: 5) {
-            PremiumFeatureItem(
-                icon: "sparkles",
-                title: "AI商品判定",
-                subtitle:
-                    "写真から商品名・型番を特定"
-            )
-
-            PremiumFeatureItem(
-                icon: "chart.bar.fill",
-                title: "3サイト相場比較",
-                subtitle:
-                    "3サイトの価格を一括比較"
-            )
-
-            PremiumFeatureItem(
-                icon: "tag.fill",
-                title: "出品までスムーズ",
-                subtitle:
-                    "相場を見てすぐ出品"
-            )
-        }
-        .frame(
-            height:
-                compact
-                ? 78
-                : 88
-        )
-    }
-}
-
-struct HomeCameraButton: View {
-    let compact: Bool
-    let action: () -> Void
-
-    private let green = Color(
-        red: 39 / 255,
-        green: 211 / 255,
-        blue: 119 / 255
-    )
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 13) {
-                Image(
-                    systemName:
-                        "camera.fill"
-                )
-                .font(.title2)
-
-                Text("カメラで撮影")
-                    .font(.title3.bold())
-
-                Spacer()
-
-                Image(
-                    systemName:
-                        "chevron.right"
-                )
-                .font(.headline)
-            }
-            .padding(.horizontal, 20)
-            .frame(
-                maxWidth: .infinity,
-                minHeight:
-                    compact
-                    ? 60
-                    : 68
-            )
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.black)
-        .background(
-            LinearGradient(
-                colors: [
+            MarketplaceMarkTile(
+                mark: "m",
+                foreground:
                     Color(
-                        red: 83 / 255,
-                        green: 238 / 255,
-                        blue: 154 / 255
-                    ),
-                    green
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
+                        red: 255 / 255,
+                        green: 66 / 255,
+                        blue: 86 / 255
+                    )
             )
-        )
-        .shadow(
-            color:
-                green.opacity(0.27),
-            radius: 13,
-            y: 4
-        )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 18
+
+            MarketplaceMarkTile(
+                mark: "Y!",
+                foreground:
+                    Color(
+                        red: 238 / 255,
+                        green: 0 / 255,
+                        blue: 0 / 255
+                    )
             )
-        )
-    }
-}
 
-struct HomePhotoPicker: View {
-    @Binding var selectedPhoto: PhotosPickerItem?
-    let compact: Bool
-
-    var body: some View {
-        PhotosPicker(
-            selection: $selectedPhoto,
-            matching: .images
-        ) {
-            HStack(spacing: 12) {
-                Image(
-                    systemName:
-                        "photo.fill"
-                )
-                .font(.title3)
-
-                Text("写真を選ぶ")
-                    .font(.headline)
-
-                Spacer()
-
-                Image(
-                    systemName:
-                        "chevron.right"
-                )
-                .font(.subheadline.bold())
-            }
-            .padding(.horizontal, 18)
-            .frame(
-                maxWidth: .infinity,
-                minHeight:
-                    compact
-                    ? 54
-                    : 60
-            )
-            .background(
-                Color.white.opacity(0.075)
-            )
-            .overlay(
-                RoundedRectangle(
-                    cornerRadius: 17
-                )
-                .stroke(
-                    Color.white.opacity(0.18),
-                    lineWidth: 1
-                )
-            )
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 17
-                )
+            MarketplaceMarkTile(
+                mark: "R",
+                foreground:
+                    Color(
+                        red: 191 / 255,
+                        green: 0 / 255,
+                        blue: 0 / 255
+                    )
             )
         }
-        .foregroundStyle(.white)
     }
 }
 
-struct HomePreviousButton: View {
-    let compact: Bool
-    let action: () -> Void
-
-    private let green = Color(
-        red: 39 / 255,
-        green: 211 / 255,
-        blue: 119 / 255
-    )
+struct MarketplaceMarkTile: View {
+    let mark: String
+    let foreground: Color
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(
-                    systemName:
-                        "clock.arrow.circlepath"
-                )
-
-                Text(
-                    "前回の検索結果を見る"
-                )
-                .font(.subheadline.bold())
-
-                Spacer()
-
-                Image(
-                    systemName:
-                        "chevron.right"
-                )
-                .font(.caption.bold())
-            }
-            .padding(.horizontal, 16)
-            .frame(
-                maxWidth: .infinity,
-                minHeight:
-                    compact
-                    ? 46
-                    : 50
-            )
-            .background(
-                green.opacity(0.08)
-            )
-            .overlay(
-                RoundedRectangle(
-                    cornerRadius: 15
-                )
-                .stroke(
-                    green.opacity(0.34),
-                    lineWidth: 1
-                )
-            )
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 15
-                )
-            )
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(green)
-    }
-}
-
-struct MarketplaceRemoteLogoTile: View {
-    let logoURL: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            RoundedRectangle(
-                cornerRadius: 9
-            )
-            .fill(Color.white)
-            .frame(
-                width: 43,
-                height: 43
-            )
-            .overlay {
-                AsyncImage(
-                    url: URL(string: logoURL)
-                ) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .padding(5)
-                } placeholder: {
-                    ProgressView()
-                        .scaleEffect(0.65)
-                }
-            }
-
-            Text(label)
+        RoundedRectangle(
+            cornerRadius: 10
+        )
+        .fill(Color.white)
+        .frame(
+            width: 43,
+            height: 43
+        )
+        .overlay(
+            Text(mark)
                 .font(
                     .system(
-                        size: 8.5,
-                        weight: .medium
+                        size: 16,
+                        weight: .black,
+                        design: .rounded
                     )
                 )
-                .foregroundStyle(
-                    .white.opacity(0.9)
-                )
-                .lineLimit(1)
-        }
+                .foregroundStyle(foreground)
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 10
+            )
+            .stroke(
+                Color.white.opacity(0.20),
+                lineWidth: 1
+            )
+        )
     }
 }
 
@@ -1059,7 +745,7 @@ struct RemoteGuitarHero: View {
             AsyncImage(
                 url: URL(
                     string:
-                        "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?auto=format&fit=crop&w=700&q=88"
+                        "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=700&q=88"
                 )
             ) { image in
                 image
