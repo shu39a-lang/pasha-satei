@@ -592,7 +592,7 @@ struct HomeHeroSection: View {
                 )
 
                 Text(
-                    "過去価格をまとめて比較"
+                    "価格をまとめて比較"
                 )
                 .font(
                     .system(
@@ -951,42 +951,30 @@ struct HomePreviousButton: View {
 struct MarketplaceLogoRow: View {
     var body: some View {
         HStack(spacing: 10) {
-            MarketplaceMarkTile(
-                mark: "m",
-                foreground:
-                    Color(
-                        red: 255 / 255,
-                        green: 66 / 255,
-                        blue: 86 / 255
-                    )
+            MarketplaceOfficialLogoTile(
+                logoURL:
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Mercari_logo.svg/256px-Mercari_logo.svg.png",
+                padding: 7
             )
 
-            MarketplaceMarkTile(
-                mark: "Y!",
-                foreground:
-                    Color(
-                        red: 238 / 255,
-                        green: 0 / 255,
-                        blue: 0 / 255
-                    )
+            MarketplaceOfficialLogoTile(
+                logoURL:
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Yahoo_Japan_logo.svg/256px-Yahoo_Japan_logo.svg.png",
+                padding: 7
             )
 
-            MarketplaceMarkTile(
-                mark: "R",
-                foreground:
-                    Color(
-                        red: 191 / 255,
-                        green: 0 / 255,
-                        blue: 0 / 255
-                    )
+            MarketplaceOfficialLogoTile(
+                logoURL:
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Rakuten_R_logo.svg/256px-Rakuten_R_logo.svg.png",
+                padding: 6
             )
         }
     }
 }
 
-struct MarketplaceMarkTile: View {
-    let mark: String
-    let foreground: Color
+struct MarketplaceOfficialLogoTile: View {
+    let logoURL: String
+    let padding: CGFloat
 
     var body: some View {
         RoundedRectangle(
@@ -997,17 +985,19 @@ struct MarketplaceMarkTile: View {
             width: 43,
             height: 43
         )
-        .overlay(
-            Text(mark)
-                .font(
-                    .system(
-                        size: 16,
-                        weight: .black,
-                        design: .rounded
-                    )
-                )
-                .foregroundStyle(foreground)
-        )
+        .overlay {
+            AsyncImage(
+                url: URL(string: logoURL)
+            ) { image in
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .padding(padding)
+            } placeholder: {
+                ProgressView()
+                    .scaleEffect(0.65)
+            }
+        }
         .overlay(
             RoundedRectangle(
                 cornerRadius: 10
