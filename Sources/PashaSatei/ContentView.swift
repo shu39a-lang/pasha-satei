@@ -1323,7 +1323,7 @@ struct CompareView: View {
         isLoadingMercari = true
         mercariError = ""
 
-        var lastResult: YahooPriceResponse?
+        var bestResult: YahooPriceResponse?
 
         for query in candidates {
             let result =
@@ -1331,25 +1331,28 @@ struct CompareView: View {
                     productName: query
                 )
 
-            lastResult = result
-
             if let result,
-               result.ok,
-               result.count > 0 {
-                mercariPrice = result
-                isLoadingMercari = false
-                return
+               result.ok {
+                if bestResult == nil
+                    || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                }
+
+                // Enough body listings were found. Avoid unnecessary extra calls.
+                if result.count >= 8 {
+                    break
+                }
             }
         }
 
-        mercariPrice = lastResult
+        mercariPrice = bestResult
 
-        if let lastResult,
-           lastResult.ok {
+        if let bestResult,
+           bestResult.ok {
             mercariError = ""
         } else {
             mercariError =
-                lastResult?.error?
+                bestResult?.error?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
@@ -1382,7 +1385,7 @@ struct CompareView: View {
             ? [productName]
             : candidates
 
-        var lastResult: YahooPriceResponse?
+        var bestResult: YahooPriceResponse?
 
         for query in queries {
             let result =
@@ -1391,25 +1394,27 @@ struct CompareView: View {
                     barcode: barcode
                 )
 
-            lastResult = result
-
             if let result,
-               result.ok,
-               result.count > 0 {
-                yahooPrice = result
-                isLoadingYahoo = false
-                return
+               result.ok {
+                if bestResult == nil
+                    || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                }
+
+                if result.count >= 8 {
+                    break
+                }
             }
         }
 
-        yahooPrice = lastResult
+        yahooPrice = bestResult
 
-        if let lastResult,
-           lastResult.ok {
+        if let bestResult,
+           bestResult.ok {
             yahooError = ""
         } else {
             yahooError =
-                lastResult?.error?
+                bestResult?.error?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
@@ -1534,6 +1539,12 @@ struct CompareView: View {
     }
 }
 
+enum PriceBandSelection {
+    case low
+    case median
+    case high
+}
+
 struct UsedPriceCard: View {
     let title: String
     let countLabel: String
@@ -1543,11 +1554,58 @@ struct UsedPriceCard: View {
     let errorText: String
     let onRetry: () -> Void
 
+    @State private var selectedBand:
+        PriceBandSelection = .median
+
     private let green = Color(
         red: 39 / 255,
         green: 211 / 255,
         blue: 119 / 255
     )
+
+    private var selectedItems: [YahooPriceItem] {
+        guard let data,
+              !data.items.isEmpty else {
+            return []
+        }
+
+        switch selectedBand {
+        case .low:
+            return Array(
+                data.items
+                    .sorted { $0.price < $1.price }
+                    .prefix(5)
+            )
+
+        case .median:
+            return Array(
+                data.items
+                    .sorted {
+                        abs($0.price - data.medianPrice)
+                        < abs($1.price - data.medianPrice)
+                    }
+                    .prefix(5)
+            )
+            .sorted { $0.price < $1.price }
+
+        case .high:
+            return Array(
+                data.items
+                    .sorted { $0.price > $1.price }
+                    .prefix(5)
+            )
+    }
+
+    private var selectedBandTitle: String {
+        switch selectedBand {
+        case .low:
+            return "最安値付近の商品"
+        case .median:
+            return "中央値付近の商品"
+        case .high:
+            return "最高値付近の商品"
+        }
+    }
 
     var body: some View {
         VStack(
@@ -1580,20 +1638,41 @@ struct UsedPriceCard: View {
             } else if let data, data.ok {
                 if data.count > 0 {
                     HStack(spacing: 10) {
-                        PriceStat(
-                            title: "最安値",
-                            value: data.minPrice
-                        )
+                        Button {
+                            selectedBand = .low
+                        } label: {
+                            PriceStat(
+                                title: "最安値",
+                                value: data.minPrice,
+                                isSelected:
+                                    selectedBand == .low
+                            )
+                        }
+                        .buttonStyle(.plain)
 
-                        PriceStat(
-                            title: "中央値",
-                            value: data.medianPrice
-                        )
+                        Button {
+                            selectedBand = .median
+                        } label: {
+                            PriceStat(
+                                title: "中央値",
+                                value: data.medianPrice,
+                                isSelected:
+                                    selectedBand == .median
+                            )
+                        }
+                        .buttonStyle(.plain)
 
-                        PriceStat(
-                            title: "最高値",
-                            value: data.maxPrice
-                        )
+                        Button {
+                            selectedBand = .high
+                        } label: {
+                            PriceStat(
+                                title: "最高値",
+                                value: data.maxPrice,
+                                isSelected:
+                                    selectedBand == .high
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Text(
@@ -1602,14 +1681,20 @@ struct UsedPriceCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                    if !data.items.isEmpty {
+                    Text(
+                        "価格をタップすると、その価格帯の商品を表示します"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                    if !selectedItems.isEmpty {
                         Divider()
 
-                        Text("商品例")
+                        Text(selectedBandTitle)
                             .font(.subheadline.bold())
 
                         ForEach(
-                            data.items.prefix(3)
+                            selectedItems
                         ) { item in
                             if let url =
                                 URL(
@@ -1747,6 +1832,7 @@ struct UsedPriceCard: View {
 struct PriceStat: View {
     let title: String
     let value: Int
+    let isSelected: Bool
 
     private let green = Color(
         red: 39 / 255,
@@ -1775,7 +1861,20 @@ struct PriceStat: View {
         )
         .padding(10)
         .background(
-            Color.white.opacity(0.05)
+            isSelected
+            ? green.opacity(0.12)
+            : Color.white.opacity(0.05)
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 10
+            )
+            .stroke(
+                isSelected
+                ? green.opacity(0.65)
+                : Color.clear,
+                lineWidth: 1
+            )
         )
         .clipShape(
             RoundedRectangle(
