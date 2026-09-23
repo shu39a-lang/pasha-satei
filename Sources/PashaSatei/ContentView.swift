@@ -86,6 +86,83 @@ struct LocalRecognitionResult {
     let barcode: String
 }
 
+
+struct PremiumAppBackground: View {
+    var body: some View {
+        ZStack {
+            Color.black
+
+            RadialGradient(
+                colors: [
+                    Color(
+                        red: 0 / 255,
+                        green: 84 / 255,
+                        blue: 55 / 255
+                    ).opacity(0.34),
+                    Color.clear
+                ],
+                center: .topTrailing,
+                startRadius: 10,
+                endRadius: 360
+            )
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.15),
+                    Color(
+                        red: 4 / 255,
+                        green: 15 / 255,
+                        blue: 12 / 255
+                    ).opacity(0.88),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
+struct PremiumFeatureItem: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(spacing: 5) {
+            ZStack {
+                Circle()
+                    .fill(green.opacity(0.12))
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(green)
+            }
+
+            Text(title)
+                .font(.caption.bold())
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            Text(subtitle)
+                .font(.system(size: 9.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var selectedImage: UIImage?
@@ -344,65 +421,183 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            PremiumAppBackground()
 
-            ScrollView {
-                VStack(spacing: 22) {
+            GeometryReader { geometry in
+                let compact =
+                    geometry.size.height < 760
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 6
+                VStack(
+                    alignment: .leading,
+                    spacing: compact ? 8 : 10
+                ) {
+                    HStack(
+                        alignment: .top,
+                        spacing: 14
                     ) {
-                        HStack(spacing: 4) {
-                            Text("パシャ")
-                                .font(
-                                    .system(
-                                        size: 38,
-                                        weight: .black
+                        VStack(
+                            alignment: .leading,
+                            spacing: 5
+                        ) {
+                            HStack(spacing: 3) {
+                                Text("パシャ")
+                                    .font(
+                                        .system(
+                                            size:
+                                                compact
+                                                ? 34
+                                                : 39,
+                                            weight: .black,
+                                            design: .rounded
+                                        )
                                     )
-                                )
 
-                            Text("査定")
-                                .font(
-                                    .system(
-                                        size: 38,
-                                        weight: .black
+                                Text("査定")
+                                    .font(
+                                        .system(
+                                            size:
+                                                compact
+                                                ? 34
+                                                : 39,
+                                            weight: .black,
+                                            design: .rounded
+                                        )
                                     )
+                                    .foregroundStyle(green)
+                            }
+
+                            Text(
+                                "売れる前に、相場をチェック。"
+                            )
+                            .font(
+                                .system(
+                                    size:
+                                        compact
+                                        ? 16
+                                        : 18,
+                                    weight: .bold
                                 )
-                                .foregroundStyle(green)
+                            )
+                            .foregroundStyle(.white)
+
+                            Text(
+                                "写真からかんたん査定"
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
 
-                        Text(
-                           "どこで売れば一番手取りが多いか比較"
-                        )
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+
+                        ZStack {
+                            RoundedRectangle(
+                                cornerRadius: 24
+                            )
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        green.opacity(0.30),
+                                        Color(
+                                            red: 4 / 255,
+                                            green: 30 / 255,
+                                            blue: 22 / 255
+                                        )
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(
+                                width:
+                                    compact
+                                    ? 108
+                                    : 122,
+                                height:
+                                    compact
+                                    ? 92
+                                    : 104
+                            )
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: 24
+                                )
+                                .stroke(
+                                    green.opacity(0.45),
+                                    lineWidth: 1
+                                )
+                            )
+
+                            Image(
+                                systemName:
+                                    "iphone.gen3.radiowaves.left.and.right"
+                            )
+                            .font(
+                                .system(
+                                    size:
+                                        compact
+                                        ? 46
+                                        : 54,
+                                    weight: .medium
+                                )
+                            )
+                            .foregroundStyle(green)
+                        }
                     }
-                    .frame(
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
+
+                    HStack(spacing: 6) {
+                        PremiumFeatureItem(
+                            icon: "sparkles",
+                            title: "商品名を自動判定",
+                            subtitle: "写真から商品を特定"
+                        )
+
+                        PremiumFeatureItem(
+                            icon: "chart.bar.fill",
+                            title: "3サイト相場を比較",
+                            subtitle: "価格をまとめて確認"
+                        )
+
+                        PremiumFeatureItem(
+                            icon: "arrow.up.right.square.fill",
+                            title: "出品ページへすぐ移動",
+                            subtitle: "相場確認から出品へ"
+                        )
+                    }
+                    .padding(.vertical, compact ? 5 : 7)
 
                     Button {
                         showUsageGuide = true
                     } label: {
                         HStack(spacing: 12) {
-                            Image(
-                                systemName:
-                                    "book.closed.fill"
-                            )
-                            .font(.title3)
+                            ZStack {
+                                RoundedRectangle(
+                                    cornerRadius: 13
+                                )
+                                .fill(green.opacity(0.14))
+                                .frame(
+                                    width: 48,
+                                    height: 48
+                                )
+
+                                Image(
+                                    systemName:
+                                        "lightbulb.fill"
+                                )
+                                .font(.title3)
+                                .foregroundStyle(green)
+                            }
 
                             VStack(
                                 alignment: .leading,
                                 spacing: 2
                             ) {
-                                Text("使い方・撮影のコツ")
-                                    .font(.headline)
+                                Text(
+                                    "使い方・撮影のコツ"
+                                )
+                                .font(.headline)
 
                                 Text(
-                                    "正確に商品を判定するためのポイント"
+                                    "精度アップのポイントを確認"
                                 )
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -414,19 +609,36 @@ struct HomeView: View {
                                 systemName:
                                     "chevron.right"
                             )
-                            .font(.subheadline.bold())
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.85))
                         }
-                        .padding(16)
-                        .foregroundStyle(green)
+                        .padding(
+                            .horizontal,
+                            14
+                        )
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight:
+                                compact
+                                ? 58
+                                : 64
+                        )
                         .background(
-                            green.opacity(0.10)
+                            LinearGradient(
+                                colors: [
+                                    green.opacity(0.15),
+                                    Color.white.opacity(0.05)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
                         .overlay(
                             RoundedRectangle(
                                 cornerRadius: 18
                             )
                             .stroke(
-                                green.opacity(0.35),
+                                green.opacity(0.38),
                                 lineWidth: 1
                             )
                         )
@@ -437,146 +649,63 @@ struct HomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
-
-                    VStack(spacing: 18) {
-                        ZStack {
-                            Circle()
-                                .fill(green.opacity(0.12))
-                                .frame(
-                                    width: 120,
-                                    height: 120
-                                )
-
-                            Image(
-                                systemName:
-                                    "viewfinder.circle.fill"
-                            )
-                            .font(.system(size: 72))
-                            .foregroundStyle(green)
-                        }
-
-                        Text("撮るだけで商品をAI判定")
-                            .font(.title2.bold())
-
-                        Text(
-                            "バーコードが無くても、写真全体からブランド・商品名・型番・容量などを判断します。"
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-
-                        HStack(spacing: 8) {
-                            FeatureBadge(
-                                text: "AI画像認識",
-                                icon: "sparkles"
-                            )
-
-                            FeatureBadge(
-                                text: "JAN対応",
-                                icon: "barcode.viewfinder"
-                            )
-
-                            FeatureBadge(
-                                text: "価格比較",
-                                icon: "chart.bar.fill"
-                            )
-                        }
-                    }
-                    .padding(24)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color(
-                                    red: 9 / 255,
-                                    green: 38 / 255,
-                                    blue: 28 / 255
-                                ),
-                                Color(
-                                    red: 20 / 255,
-                                    green: 20 / 255,
-                                    blue: 22 / 255
-                                )
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(
-                            cornerRadius: 26
-                        )
-                        .stroke(
-                            green.opacity(0.35),
-                            lineWidth: 1
-                        )
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 26
-                        )
-                    )
-
-                    HStack(spacing: 10) {
-                        StepCard(
-                            number: "1",
-                            title: "撮影",
-                            icon: "camera.fill"
-                        )
-
-                        StepCard(
-                            number: "2",
-                            title: "AI特定",
-                            icon: "sparkles"
-                        )
-
-                        StepCard(
-                            number: "3",
-                            title: "価格比較",
-                            icon: "chart.bar.fill"
-                        )
-                    }
-
-                    if hasPreviousResult {
-                        Button(action: onOpenPreviousResult) {
-                            Label(
-                                "前回の検索結果を見る",
-                                systemImage: "clock.arrow.circlepath"
-                            )
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .foregroundStyle(green)
-                            .background(green.opacity(0.10))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(
-                                        green.opacity(0.35),
-                                        lineWidth: 1
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .foregroundStyle(.white)
 
                     Button {
                         showCamera = true
                     } label: {
-                        Label(
-                            "カメラで撮影",
-                            systemImage: "camera.fill"
+                        HStack(spacing: 12) {
+                            Image(
+                                systemName:
+                                    "camera.fill"
+                            )
+                            .font(.title2)
+
+                            Text("カメラで撮影")
+                                .font(.title3.bold())
+
+                            Spacer()
+
+                            Image(
+                                systemName:
+                                    "chevron.right"
+                            )
+                            .font(.headline)
+                        }
+                        .padding(.horizontal, 20)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight:
+                                compact
+                                ? 60
+                                : 68
                         )
-                        .font(.title3.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .background(green)
+                    .foregroundStyle(.black)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(
+                                    red: 78 / 255,
+                                    green: 235 / 255,
+                                    blue: 151 / 255
+                                ),
+                                green
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .shadow(
+                        color:
+                            green.opacity(0.25),
+                        radius: 14,
+                        y: 5
+                    )
                     .clipShape(
                         RoundedRectangle(
-                            cornerRadius: 18
+                            cornerRadius: 19
                         )
                     )
 
@@ -584,34 +713,182 @@ struct HomeView: View {
                         selection: $selectedPhoto,
                         matching: .images
                     ) {
-                        Label(
-                            "写真を選ぶ",
-                            systemImage: "photo.fill"
-                        )
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            Color(
-                                red: 28 / 255,
-                                green: 28 / 255,
-                                blue: 30 / 255
+                        HStack(spacing: 12) {
+                            Image(
+                                systemName:
+                                    "photo.fill"
                             )
+                            .font(.title3)
+
+                            Text("写真を選ぶ")
+                                .font(.headline)
+
+                            Spacer()
+
+                            Image(
+                                systemName:
+                                    "chevron.right"
+                            )
+                            .font(.subheadline.bold())
+                        }
+                        .padding(.horizontal, 18)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight:
+                                compact
+                                ? 54
+                                : 60
+                        )
+                        .background(
+                            Color.white.opacity(0.07)
                         )
                         .overlay(
                             RoundedRectangle(
                                 cornerRadius: 18
                             )
                             .stroke(
-                                Color.white.opacity(0.15),
+                                Color.white.opacity(0.16),
                                 lineWidth: 1
+                            )
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 18
                             )
                         )
                     }
                     .foregroundStyle(.white)
 
+                    if hasPreviousResult {
+                        Button(
+                            action:
+                                onOpenPreviousResult
+                        ) {
+                            HStack(spacing: 12) {
+                                Image(
+                                    systemName:
+                                        "clock.arrow.circlepath"
+                                )
+
+                                Text(
+                                    "前回の検索結果を見る"
+                                )
+                                .font(.subheadline.bold())
+
+                                Spacer()
+
+                                Image(
+                                    systemName:
+                                        "chevron.right"
+                                )
+                                .font(.caption.bold())
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight:
+                                    compact
+                                    ? 46
+                                    : 50
+                            )
+                            .background(
+                                green.opacity(0.08)
+                            )
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: 16
+                                )
+                                .stroke(
+                                    green.opacity(0.35),
+                                    lineWidth: 1
+                                )
+                            )
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: 16
+                                )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(green)
+                    }
+
+                    VStack(
+                        alignment: .leading,
+                        spacing: compact ? 5 : 7
+                    ) {
+                        Text(
+                            "より正確な査定のために"
+                        )
+                        .font(.caption.bold())
+                        .foregroundStyle(
+                            .white.opacity(0.82)
+                        )
+
+                        HStack(
+                            alignment: .top,
+                            spacing: 10
+                        ) {
+                            Label(
+                                "結果が違う時は\n角度を変えて再撮影",
+                                systemImage:
+                                    "camera.viewfinder"
+                            )
+
+                            Divider()
+                                .overlay(
+                                    Color.white.opacity(0.12)
+                                )
+
+                            Label(
+                                "商品名や型番を入力すると\nさらに正確",
+                                systemImage:
+                                    "text.badge.checkmark"
+                            )
+                        }
+                        .font(
+                            .system(
+                                size:
+                                    compact
+                                    ? 10.5
+                                    : 11.5,
+                                weight: .medium
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(
+                        compact
+                        ? 11
+                        : 13
+                    )
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: .leading
+                    )
+                    .background(
+                        Color.white.opacity(0.045)
+                    )
+                    .overlay(
+                        RoundedRectangle(
+                            cornerRadius: 16
+                        )
+                        .stroke(
+                            green.opacity(0.18),
+                            lineWidth: 1
+                        )
+                    )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 16
+                        )
+                    )
+
+                    Spacer(minLength: 0)
                 }
-                .padding(18)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
             }
         }
         .navigationBarHidden(true)
@@ -965,8 +1242,7 @@ struct ResultView: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            PremiumAppBackground()
 
             ScrollView {
                 VStack(spacing: 18) {
@@ -1381,7 +1657,23 @@ struct CandidateRow: View {
         }
         .padding(10)
         .background(
-            Color.white.opacity(0.04)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.065),
+                    green.opacity(0.045)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 14
+            )
+            .stroke(
+                green.opacity(0.16),
+                lineWidth: 1
+            )
         )
         .clipShape(
             RoundedRectangle(
@@ -1432,10 +1724,22 @@ struct InfoCard: View {
         }
         .padding(16)
         .background(
-            Color(
-                red: 24 / 255,
-                green: 24 / 255,
-                blue: 26 / 255
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.065),
+                    green.opacity(0.035)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+            .stroke(
+                green.opacity(0.18),
+                lineWidth: 1
             )
         )
         .clipShape(
@@ -1478,8 +1782,7 @@ struct CompareView: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            PremiumAppBackground()
 
             ScrollView {
                 VStack(
@@ -2366,10 +2669,21 @@ struct UsedPriceCard: View {
         }
         .padding(16)
         .background(
-            Color(
-                red: 24 / 255,
-                green: 24 / 255,
-                blue: 26 / 255
+            LinearGradient(
+                colors: [
+                    Color(
+                        red: 18 / 255,
+                        green: 30 / 255,
+                        blue: 26 / 255
+                    ),
+                    Color(
+                        red: 20 / 255,
+                        green: 20 / 255,
+                        blue: 22 / 255
+                    )
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
         )
         .overlay(
@@ -2618,10 +2932,17 @@ struct MarketplaceCard: View {
         }
         .padding(16)
         .background(
-            Color(
-                red: 24 / 255,
-                green: 24 / 255,
-                blue: 26 / 255
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.065),
+                    Color(
+                        red: 4 / 255,
+                        green: 25 / 255,
+                        blue: 18 / 255
+                    ).opacity(0.85)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
         )
         .overlay(
