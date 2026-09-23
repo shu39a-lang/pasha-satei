@@ -104,9 +104,9 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
-                hasPreviousResult: selectedImage != nil,
+                hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
-                    if selectedImage != nil {
+                    if hasPreviousSearchResult {
                         path.append(.result)
                     }
                 }
@@ -452,29 +452,6 @@ struct HomeView: View {
                         )
                     }
 
-
-                    if hasPreviousResult {
-                        Button(action: onOpenPreviousResult) {
-                            Label(
-                                "前回の検索結果を見る",
-                                systemImage: "clock.arrow.circlepath"
-                            )
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .foregroundStyle(green)
-                            .background(green.opacity(0.10))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(
-                                        green.opacity(0.35),
-                                        lineWidth: 1
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-
                     Button {
                         showCamera = true
                     } label: {
@@ -524,6 +501,28 @@ struct HomeView: View {
                         )
                     }
                     .foregroundStyle(.white)
+
+                    if hasPreviousResult {
+                        Button(action: onOpenPreviousResult) {
+                            Label(
+                                "前回の検索結果を見る",
+                                systemImage: "clock.arrow.circlepath"
+                            )
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .foregroundStyle(green)
+                            .background(green.opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(
+                                        green.opacity(0.35),
+                                        lineWidth: 1
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(18)
             }
@@ -671,7 +670,7 @@ struct ResultView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 
-                            Text("検索状況により10〜30秒ほどかかる場合があります")
+                            Text("通常5〜15秒ほどで判定します")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
 
@@ -2025,6 +2024,45 @@ enum GeminiProductAPI {
     private static let endpoint =
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
+    // Uploading the original iPhone photo can be several MB.
+    // A 1600 px long edge preserves logos/model text well enough for Gemini
+    // while greatly reducing JPEG/Base64 upload time.
+    private static func preparedImage(
+        _ image: UIImage
+    ) -> UIImage {
+        let maxEdge: CGFloat = 1600
+        let size = image.size
+        let longest = max(size.width, size.height)
+
+        guard longest > maxEdge,
+              size.width > 0,
+              size.height > 0 else {
+            return image
+        }
+
+        let scale = maxEdge / longest
+        let target = CGSize(
+            width: max(1, floor(size.width * scale)),
+            height: max(1, floor(size.height * scale))
+        )
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(
+            size: target,
+            format: format
+        ).image { _ in
+            image.draw(
+                in: CGRect(
+                    origin: .zero,
+                    size: target
+                )
+            )
+        }
+    }
+
     static func analyze(
         image: UIImage,
         ocrText: String,
@@ -2032,19 +2070,30 @@ enum GeminiProductAPI {
     ) async -> GeminiProductResponse? {
 
         guard let url =
-                URL(string: endpoint),
-              let imageData =
-                image.jpegData(
-                    compressionQuality: 0.78
+                URL(string: endpoint) else {
+            return nil
+        }
+
+        let uploadImage =
+            preparedImage(image)
+
+        guard let imageData =
+                uploadImage.jpegData(
+                    compressionQuality: 0.72
                 ) else {
             return nil
         }
+
+        // Limit OCR text sent to the server so accidental long OCR output
+        // cannot inflate the request or distract product identification.
+        let compactOCR =
+            String(ocrText.prefix(1200))
 
         let body: [String: Any] = [
             "imageBase64":
                 imageData
                     .base64EncodedString(),
-            "ocrText": ocrText,
+            "ocrText": compactOCR,
             "barcode": barcode
         ]
 
@@ -2067,8 +2116,9 @@ enum GeminiProductAPI {
         )
         request.httpBody = jsonData
 
-        // 過去の成功版と同じ上限。
-        request.timeoutInterval = 45
+        // Do not let a slow Cloud Run/Gemini request hold the camera result
+        // screen for 30-60 seconds.
+        request.timeoutInterval = 16
 
         do {
             let (data, response) =
@@ -2165,11 +2215,13 @@ enum LocalProductRecognizer {
                     )
                 }
 
+            // OCR is supplemental evidence. Gemini still performs the main
+            // visual recognition, so prefer low latency here.
             request.recognitionLevel =
-                .accurate
+                .fast
 
             request.usesLanguageCorrection =
-                true
+                false
 
             request.recognitionLanguages = [
                 "ja-JP",
