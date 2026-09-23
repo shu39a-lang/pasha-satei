@@ -1,6 +1,8 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import MapKit
+import CoreLocation
 @preconcurrency import Vision
 
 enum AppRoute: Hashable {
@@ -2358,6 +2360,10 @@ struct CompareView: View {
     @State private var isLoadingRakuma = false
     @State private var rakumaError = ""
 
+    @StateObject
+    private var nearbyStoreLocator =
+        NearbyBuybackStoreLocator()
+
     @Environment(\.openURL)
     private var openURL
 
@@ -2493,6 +2499,11 @@ struct CompareView: View {
                         )
                     )
 
+                    NearbyBuybackStoresCard(
+                        locator: nearbyStoreLocator,
+                        searchTerm: buybackSearchTerm
+                    )
+
                 }
                 .padding(16)
             }
@@ -2514,6 +2525,61 @@ struct CompareView: View {
 
             await loadRakumaPrice()
         }
+    }
+
+    private var buybackSearchTerm: String {
+        let source =
+            "\(brand) \(productName) \(modelNumber)"
+                .lowercased()
+
+        if source.contains("iphone")
+            || source.contains("スマホ")
+            || source.contains("android")
+            || source.contains("pixel")
+            || source.contains("galaxy")
+            || source.contains("arrows")
+            || source.contains("aquos") {
+            return "スマホ 買取"
+        }
+
+        if source.contains("ギター")
+            || source.contains("guitar")
+            || source.contains("ベース")
+            || source.contains("楽器") {
+            return "楽器 買取"
+        }
+
+        if source.contains("カメラ")
+            || source.contains("camera")
+            || source.contains("nikon")
+            || source.contains("canon")
+            || source.contains("sony α") {
+            return "カメラ 買取"
+        }
+
+        if source.contains("時計")
+            || source.contains("watch")
+            || source.contains("rolex")
+            || source.contains("seiko") {
+            return "時計 買取"
+        }
+
+        if source.contains("ゲーム")
+            || source.contains("switch")
+            || source.contains("playstation")
+            || source.contains("xbox") {
+            return "ゲーム 買取"
+        }
+
+        if source.contains("macbook")
+            || source.contains("パソコン")
+            || source.contains("pc")
+            || source.contains("ipad")
+            || source.contains("タブレット") {
+            return "パソコン 買取"
+        }
+
+        return "買取店"
     }
 
     private var stableSearchCandidates: [String] {
@@ -2931,6 +2997,620 @@ struct CompareView: View {
         ) {
             openURL(url)
         }
+    }
+}
+
+
+struct NearbyBuybackStore: Identifiable {
+    let id = UUID()
+    let name: String
+    let address: String
+    let phoneNumber: String?
+    let distanceMeters: CLLocationDistance
+    let mapItem: MKMapItem
+
+    var distanceText: String {
+        if distanceMeters < 1000 {
+            return "\(Int(distanceMeters.rounded()))m"
+        }
+
+        return String(
+            format:
+                "%.1fkm",
+            distanceMeters / 1000
+        )
+    }
+}
+
+@MainActor
+final class NearbyBuybackStoreLocator:
+    NSObject,
+    ObservableObject,
+    CLLocationManagerDelegate {
+
+    @Published
+    var stores: [NearbyBuybackStore] = []
+
+    @Published
+    var isLoading = false
+
+    @Published
+    var message = "現在地から近い買取店を探します"
+
+    private let manager =
+        CLLocationManager()
+
+    private var pendingSearchTerm =
+        "買取店"
+
+    private var didRequestSearch = false
+
+    override init() {
+        super.init()
+
+        manager.delegate = self
+        manager.desiredAccuracy =
+            kCLLocationAccuracyHundredMeters
+    }
+
+    func start(
+        searchTerm: String
+    ) {
+        pendingSearchTerm =
+            searchTerm.isEmpty
+            ? "買取店"
+            : searchTerm
+
+        guard !didRequestSearch else {
+            return
+        }
+
+        didRequestSearch = true
+
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            message =
+                "近くの買取店を表示するため位置情報を確認します"
+            manager
+                .requestWhenInUseAuthorization()
+
+        case .authorizedAlways,
+             .authorizedWhenInUse:
+            requestLocation()
+
+        case .denied,
+             .restricted:
+            message =
+                "位置情報を許可すると近くの買取店3件を表示できます"
+
+        @unknown default:
+            message =
+                "位置情報を確認できませんでした"
+        }
+    }
+
+    func retry(
+        searchTerm: String
+    ) {
+        pendingSearchTerm =
+            searchTerm.isEmpty
+            ? "買取店"
+            : searchTerm
+
+        didRequestSearch = true
+
+        switch manager.authorizationStatus {
+        case .authorizedAlways,
+             .authorizedWhenInUse:
+            requestLocation()
+
+        case .notDetermined:
+            manager
+                .requestWhenInUseAuthorization()
+
+        case .denied,
+             .restricted:
+            message =
+                "設定から位置情報を許可してください"
+
+        @unknown default:
+            break
+        }
+    }
+
+    private func requestLocation() {
+        isLoading = true
+        message =
+            "近くの買取店を検索しています…"
+
+        manager.requestLocation()
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(
+        _ manager: CLLocationManager
+    ) {
+        Task { @MainActor in
+            switch manager.authorizationStatus {
+            case .authorizedAlways,
+                 .authorizedWhenInUse:
+                requestLocation()
+
+            case .denied,
+                 .restricted:
+                isLoading = false
+                message =
+                    "位置情報を許可すると近くの買取店3件を表示できます"
+
+            default:
+                break
+            }
+        }
+    }
+
+    nonisolated func locationManager(
+        _ manager: CLLocationManager,
+        didUpdateLocations locations: [CLLocation]
+    ) {
+        guard let location =
+                locations.last else {
+            return
+        }
+
+        Task { @MainActor in
+            searchNearby(
+                from: location
+            )
+        }
+    }
+
+    nonisolated func locationManager(
+        _ manager: CLLocationManager,
+        didFailWithError error: Error
+    ) {
+        Task { @MainActor in
+            isLoading = false
+            message =
+                "現在地を取得できませんでした。もう一度お試しください。"
+        }
+    }
+
+    private func searchNearby(
+        from location: CLLocation
+    ) {
+        let request =
+            MKLocalSearch.Request()
+
+        request.naturalLanguageQuery =
+            pendingSearchTerm
+
+        request.region =
+            MKCoordinateRegion(
+                center:
+                    location.coordinate,
+                latitudinalMeters: 15000,
+                longitudinalMeters: 15000
+            )
+
+        let search =
+            MKLocalSearch(
+                request: request
+            )
+
+        search.start {
+            [weak self]
+            response,
+            error in
+
+            guard let self else {
+                return
+            }
+
+            Task { @MainActor in
+                isLoading = false
+
+                guard error == nil,
+                      let items =
+                        response?.mapItems,
+                      !items.isEmpty else {
+                    stores = []
+                    message =
+                        "近くの買取店が見つかりませんでした"
+                    return
+                }
+
+                var seen =
+                    Set<String>()
+
+                stores =
+                    items
+                    .compactMap {
+                        item
+                        -> NearbyBuybackStore? in
+
+                        guard let itemLocation =
+                                item.placemark.location else {
+                            return nil
+                        }
+
+                        let name =
+                            item.name?
+                                .trimmingCharacters(
+                                    in:
+                                        .whitespacesAndNewlines
+                                )
+                            ?? "買取店"
+
+                        let address =
+                            [
+                                item.placemark
+                                    .administrativeArea,
+                                item.placemark
+                                    .locality,
+                                item.placemark
+                                    .subLocality,
+                                item.placemark
+                                    .thoroughfare
+                            ]
+                            .compactMap { $0 }
+                            .joined()
+
+                        let key =
+                            "\(name)|\(address)"
+
+                        guard
+                            !seen.contains(key)
+                        else {
+                            return nil
+                        }
+
+                        seen.insert(key)
+
+                        return NearbyBuybackStore(
+                            name: name,
+                            address: address,
+                            phoneNumber:
+                                item.phoneNumber,
+                            distanceMeters:
+                                location.distance(
+                                    from:
+                                        itemLocation
+                                ),
+                            mapItem: item
+                        )
+                    }
+                    .sorted {
+                        $0.distanceMeters
+                        < $1.distanceMeters
+                    }
+                    .prefix(3)
+                    .map { $0 }
+
+                message =
+                    stores.isEmpty
+                    ? "近くの買取店が見つかりませんでした"
+                    : "現在地から近い順に表示しています"
+            }
+        }
+    }
+}
+
+struct NearbyBuybackStoresCard: View {
+    @ObservedObject
+    var locator:
+        NearbyBuybackStoreLocator
+
+    let searchTerm: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 12
+        ) {
+            HStack {
+                VStack(
+                    alignment: .leading,
+                    spacing: 3
+                ) {
+                    Text("近くの買取店")
+                        .font(.headline)
+
+                    Text(locator.message)
+                        .font(.caption)
+                        .foregroundStyle(
+                            .secondary
+                        )
+                }
+
+                Spacer()
+
+                if locator.isLoading {
+                    ProgressView()
+                        .tint(green)
+                } else {
+                    Button {
+                        locator.retry(
+                            searchTerm:
+                                searchTerm
+                        )
+                    } label: {
+                        Image(
+                            systemName:
+                                "arrow.clockwise"
+                        )
+                        .foregroundStyle(
+                            green
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !locator.stores.isEmpty {
+                ForEach(
+                    Array(
+                        locator.stores
+                            .enumerated()
+                    ),
+                    id: \.element.id
+                ) {
+                    index,
+                    store in
+
+                    NearbyBuybackStoreRow(
+                        rank:
+                            index + 1,
+                        store:
+                            store
+                    )
+
+                    if index
+                        < locator.stores.count - 1 {
+                        Divider()
+                            .overlay(
+                                Color.white
+                                    .opacity(0.10)
+                            )
+                    }
+                }
+            } else if !locator.isLoading {
+                Button {
+                    locator.retry(
+                        searchTerm:
+                            searchTerm
+                    )
+                } label: {
+                    Label(
+                        "近くの買取店を検索",
+                        systemImage:
+                            "location.fill"
+                    )
+                    .font(
+                        .subheadline.bold()
+                    )
+                    .foregroundStyle(green)
+                    .frame(
+                        maxWidth:
+                            .infinity
+                    )
+                    .padding(
+                        .vertical,
+                        11
+                    )
+                    .background(
+                        green.opacity(0.08)
+                    )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 12
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.white
+                        .opacity(0.06),
+                    green.opacity(0.035)
+                ],
+                startPoint:
+                    .topLeading,
+                endPoint:
+                    .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+            .stroke(
+                green.opacity(0.28),
+                lineWidth: 1
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+        )
+        .onAppear {
+            locator.start(
+                searchTerm:
+                    searchTerm
+            )
+        }
+    }
+}
+
+struct NearbyBuybackStoreRow: View {
+    let rank: Int
+    let store: NearbyBuybackStore
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 8
+        ) {
+            HStack(
+                alignment: .top,
+                spacing: 10
+            ) {
+                Text("\(rank)")
+                    .font(
+                        .caption.bold()
+                    )
+                    .foregroundStyle(
+                        .black
+                    )
+                    .frame(
+                        width: 26,
+                        height: 26
+                    )
+                    .background(green)
+                    .clipShape(Circle())
+
+                VStack(
+                    alignment: .leading,
+                    spacing: 3
+                ) {
+                    Text(store.name)
+                        .font(
+                            .subheadline.bold()
+                        )
+                        .foregroundStyle(
+                            .white
+                        )
+
+                    HStack(spacing: 8) {
+                        Text(
+                            store.distanceText
+                        )
+                        .font(
+                            .caption.bold()
+                        )
+                        .foregroundStyle(
+                            green
+                        )
+
+                        if !store.address.isEmpty {
+                            Text(
+                                store.address
+                            )
+                            .font(.caption)
+                            .foregroundStyle(
+                                .secondary
+                            )
+                            .lineLimit(1)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    store.mapItem
+                        .openInMaps(
+                            launchOptions: [
+                                MKLaunchOptionsDirectionsModeKey:
+                                    MKLaunchOptionsDirectionsModeDriving
+                            ]
+                        )
+                } label: {
+                    Label(
+                        "地図で見る",
+                        systemImage:
+                            "map.fill"
+                    )
+                }
+                .buttonStyle(
+                    NearbyStoreActionStyle()
+                )
+
+                if let phone =
+                        store.phoneNumber,
+                   let telURL =
+                        URL(
+                            string:
+                                "tel://\(phone.filter { $0.isNumber || $0 == "+" })"
+                        ) {
+                    Link(
+                        destination:
+                            telURL
+                    ) {
+                        Label(
+                            "電話",
+                            systemImage:
+                                "phone.fill"
+                        )
+                    }
+                    .buttonStyle(
+                        NearbyStoreActionStyle()
+                    )
+                }
+            }
+        }
+        .padding(
+            .vertical,
+            3
+        )
+    }
+}
+
+struct NearbyStoreActionStyle:
+    ButtonStyle {
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    func makeBody(
+        configuration:
+            Configuration
+    ) -> some View {
+        configuration.label
+            .font(
+                .caption.bold()
+            )
+            .foregroundStyle(green)
+            .padding(
+                .horizontal,
+                10
+            )
+            .padding(
+                .vertical,
+                7
+            )
+            .background(
+                green.opacity(
+                    configuration.isPressed
+                    ? 0.16
+                    : 0.08
+                )
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 10
+                )
+            )
     }
 }
 
