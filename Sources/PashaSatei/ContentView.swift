@@ -134,7 +134,9 @@ struct ContentView: View {
                 case .compare:
                     CompareView(
                         productName: productName,
-                        barcode: detectedBarcode
+                        barcode: detectedBarcode,
+                        brand: brand,
+                        modelNumber: modelNumber
                     )
                 }
             }
@@ -1102,6 +1104,8 @@ struct InfoCard: View {
 struct CompareView: View {
     let productName: String
     let barcode: String
+    let brand: String
+    let modelNumber: String
 
     @State private var salePrices: [String: String] = [:]
     @State private var shippingCosts: [String: String] = [:]
@@ -1215,30 +1219,137 @@ struct CompareView: View {
         }
     }
 
-    @MainActor
-    private func loadMercariPrice() async {
-        guard !productName
+    private var stableSearchCandidates: [String] {
+        var values: [String] = []
+
+        func add(_ raw: String) {
+            let value =
+                raw.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+
+            guard !value.isEmpty,
+                  !values.contains(value) else {
+                return
+            }
+
+            values.append(value)
+        }
+
+        // Most stable key: brand + model number.
+        if !modelNumber
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-            .isEmpty else {
+            .isEmpty {
+
+            let brandModel =
+                [
+                    brand,
+                    modelNumber
+                ]
+                .map {
+                    $0.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+
+            add(brandModel)
+            add(modelNumber)
+        }
+
+        // Keep the recognized display/product name as a fallback.
+        add(productName)
+
+        // Last fallback: remove common condition/carrier words that can
+        // make marketplace searches unnecessarily narrow.
+        var simplified = productName
+
+        let removableWords = [
+            "新品未使用",
+            "新品",
+            "未使用",
+            "中古",
+            "美品",
+            "ジャンク",
+            "SIMフリー",
+            "SIMロック解除済み",
+            "docomo",
+            "au",
+            "SoftBank",
+            "softbank",
+            "楽天モバイル",
+            "ワイモバイル",
+            "Y!mobile",
+            "UQ",
+            "本体のみ",
+            "送料無料"
+        ]
+
+        for word in removableWords {
+            simplified =
+                simplified.replacingOccurrences(
+                    of: word,
+                    with: "",
+                    options: [.caseInsensitive]
+                )
+        }
+
+        simplified =
+            simplified
+                .split(
+                    whereSeparator: {
+                        $0.isWhitespace
+                    }
+                )
+                .joined(separator: " ")
+
+        add(simplified)
+
+        return Array(values.prefix(4))
+    }
+
+    @MainActor
+    private func loadMercariPrice() async {
+        let candidates =
+            stableSearchCandidates
+
+        guard !candidates.isEmpty else {
             return
         }
 
         isLoadingMercari = true
         mercariError = ""
 
-        let result =
-            await MercariPriceAPI.fetch(
-                productName: productName
-            )
+        var lastResult: YahooPriceResponse?
 
-        if let result, result.ok {
-            mercariPrice = result
+        for query in candidates {
+            let result =
+                await MercariPriceAPI.fetch(
+                    productName: query
+                )
+
+            lastResult = result
+
+            if let result,
+               result.ok,
+               result.count > 0 {
+                mercariPrice = result
+                isLoadingMercari = false
+                return
+            }
+        }
+
+        mercariPrice = lastResult
+
+        if let lastResult,
+           lastResult.ok {
+            mercariError = ""
         } else {
-            mercariPrice = result
             mercariError =
-                result?.error?
+                lastResult?.error?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
@@ -1250,29 +1361,55 @@ struct CompareView: View {
 
     @MainActor
     private func loadYahooPrice() async {
-        guard !productName
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .isEmpty else {
+        let candidates =
+            stableSearchCandidates
+
+        guard !candidates.isEmpty
+                || !barcode
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    .isEmpty else {
             return
         }
 
         isLoadingYahoo = true
         yahooError = ""
 
-        let result =
-            await YahooPriceAPI.fetch(
-                productName: productName,
-                barcode: barcode
-            )
+        // Yahoo can use JAN/EAN, so keep it on every attempt.
+        let queries =
+            candidates.isEmpty
+            ? [productName]
+            : candidates
 
-        if let result, result.ok {
-            yahooPrice = result
+        var lastResult: YahooPriceResponse?
+
+        for query in queries {
+            let result =
+                await YahooPriceAPI.fetch(
+                    productName: query,
+                    barcode: barcode
+                )
+
+            lastResult = result
+
+            if let result,
+               result.ok,
+               result.count > 0 {
+                yahooPrice = result
+                isLoadingYahoo = false
+                return
+            }
+        }
+
+        yahooPrice = lastResult
+
+        if let lastResult,
+           lastResult.ok {
+            yahooError = ""
         } else {
-            yahooPrice = result
             yahooError =
-                result?.error?
+                lastResult?.error?
                     .trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
