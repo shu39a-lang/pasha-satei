@@ -331,6 +331,8 @@ struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
 
+    @State private var showUsageGuide = false
+
     let hasPreviousResult: Bool
     let onOpenPreviousResult: () -> Void
 
@@ -381,6 +383,60 @@ struct HomeView: View {
                         maxWidth: .infinity,
                         alignment: .leading
                     )
+
+                    Button {
+                        showUsageGuide = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(
+                                systemName:
+                                    "book.closed.fill"
+                            )
+                            .font(.title3)
+
+                            VStack(
+                                alignment: .leading,
+                                spacing: 2
+                            ) {
+                                Text("使い方・撮影のコツ")
+                                    .font(.headline)
+
+                                Text(
+                                    "正確に商品を判定するためのポイント"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Image(
+                                systemName:
+                                    "chevron.right"
+                            )
+                            .font(.subheadline.bold())
+                        }
+                        .padding(16)
+                        .foregroundStyle(green)
+                        .background(
+                            green.opacity(0.10)
+                        )
+                        .overlay(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                            .stroke(
+                                green.opacity(0.35),
+                                lineWidth: 1
+                            )
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
 
                     VStack(spacing: 18) {
                         ZStack {
@@ -559,6 +615,248 @@ struct HomeView: View {
             }
         }
         .navigationBarHidden(true)
+        .sheet(
+            isPresented:
+                $showUsageGuide
+        ) {
+            UsageGuideView()
+        }
+    }
+}
+
+struct UsageGuideView: View {
+    @Environment(\.dismiss)
+    private var dismiss
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 18
+                    ) {
+                        GuideSection(
+                            number: "1",
+                            title: "写真の撮り方",
+                            text:
+                                "商品全体ができるだけ大きく写るように撮影してください。ケース・箱・周囲の物が一緒に写ると、関連商品として認識される場合があります。1回で正しい結果が出ない場合は、少し角度を変えてもう一度撮影してください。正面だけでなく、背面・側面・型番が見える面も有効です。"
+                        )
+
+                        GuideSection(
+                            number: "2",
+                            title: "型番やロゴを写す",
+                            text:
+                                "メーカー名、ロゴ、型番、モデル番号が見えるように撮ると精度が上がります。スマートフォン、家電、カメラなどは、背面やラベルの型番が特に重要です。"
+                        )
+
+                        GuideSection(
+                            number: "3",
+                            title: "バーコードがあれば活用",
+                            text:
+                                "JANコードやバーコードがある商品は、コードがはっきり見えるように撮影すると、より正確に商品を特定しやすくなります。"
+                        )
+
+                        GuideSection(
+                            number: "4",
+                            title: "分かっている情報は入力",
+                            text:
+                                "AIの判定結果が違う場合や、商品名・型番が分かっている場合は、商品名の入力欄を修正してください。例えば「arrows We」だけでなく「arrows We F-51B」のように型番まで入れると、販売サイトの検索精度が上がります。"
+                        )
+
+                        GuideSection(
+                            number: "5",
+                            title: "候補を切り替えて確認",
+                            text:
+                                "最初の候補が違う場合は「近い候補から選ぶ」から別の候補を選択してください。型番や商品名が合っている候補を選んでから販売先比較へ進むと、検索結果が安定しやすくなります。"
+                        )
+
+                        GuideSection(
+                            number: "6",
+                            title: "検索結果が少ない場合",
+                            text:
+                                "販売サイトによって、現在出品されている商品数は異なります。商品名や型番を確認し、必要なら候補を切り替えて再検索してください。売り切れ商品や関連商品は除外されるため、表示件数が少なくなる場合があります。"
+                        )
+
+                        GuideSection(
+                            number: "7",
+                            title: "価格を見るとき",
+                            text:
+                                "最安値には状態の悪い商品や特殊な条件の商品が含まれる場合があります。実際の販売相場を見るときは中央値付近の商品を中心に確認するのがおすすめです。最安値・中央値・最高値をタップすると、それぞれの価格帯の商品を確認できます。"
+                        )
+
+                        GuideSection(
+                            number: "8",
+                            title: "撮影時のチェック",
+                            bullets: [
+                                "明るい場所で撮影する",
+                                "商品を画面の中央に置く",
+                                "商品全体を写す",
+                                "型番・ロゴが読めるようにする",
+                                "ケースや付属品をできるだけ外す",
+                                "背景に別の商品を置かない",
+                                "ぼやけた写真や暗い写真は避ける"
+                            ]
+                        )
+
+                        VStack(
+                            alignment: .leading,
+                            spacing: 8
+                        ) {
+                            Label(
+                                "ご注意",
+                                systemImage:
+                                    "info.circle.fill"
+                            )
+                            .font(.headline)
+                            .foregroundStyle(green)
+
+                            Text(
+                                "AI判定や各販売サイトの検索結果は参考情報です。商品の状態、付属品、カラー、容量、販売時期などによって実際の販売価格は異なります。出品前に商品名・型番・状態をご自身でも確認してください。"
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineSpacing(4)
+                        }
+                        .padding(16)
+                        .background(
+                            Color(
+                                red: 24 / 255,
+                                green: 24 / 255,
+                                blue: 26 / 255
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                            .stroke(
+                                green.opacity(0.35),
+                                lineWidth: 1
+                            )
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 18
+                            )
+                        )
+                    }
+                    .padding(18)
+                }
+            }
+            .navigationTitle(
+                "パシャ査定 使い方ガイド"
+            )
+            .navigationBarTitleDisplayMode(
+                .inline
+            )
+            .toolbar {
+                ToolbarItem(
+                    placement:
+                        .topBarTrailing
+                ) {
+                    Button("閉じる") {
+                        dismiss()
+                    }
+                    .foregroundStyle(green)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+struct GuideSection: View {
+    let number: String
+    let title: String
+    var text: String? = nil
+    var bullets: [String] = []
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 10
+        ) {
+            HStack(spacing: 10) {
+                Text(number)
+                    .font(.caption.bold())
+                    .foregroundStyle(.black)
+                    .frame(
+                        width: 28,
+                        height: 28
+                    )
+                    .background(green)
+                    .clipShape(Circle())
+
+                Text(title)
+                    .font(.headline)
+            }
+
+            if let text {
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+            }
+
+            if !bullets.isEmpty {
+                VStack(
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(
+                        bullets,
+                        id: \.self
+                    ) { item in
+                        HStack(
+                            alignment: .top,
+                            spacing: 8
+                        ) {
+                            Image(
+                                systemName:
+                                    "checkmark.circle.fill"
+                            )
+                            .foregroundStyle(green)
+
+                            Text(item)
+                                .font(.subheadline)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+        .background(
+            Color(
+                red: 24 / 255,
+                green: 24 / 255,
+                blue: 26 / 255
+            )
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+        )
     }
 }
 
