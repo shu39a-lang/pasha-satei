@@ -413,474 +413,18 @@ struct HomeView: View {
     let hasPreviousResult: Bool
     let onOpenPreviousResult: () -> Void
 
-    private let green = Color(
-        red: 39 / 255,
-        green: 211 / 255,
-        blue: 119 / 255
-    )
-
     var body: some View {
         ZStack {
             PremiumAppBackground()
 
             GeometryReader { geometry in
-                let compact =
-                    geometry.size.height < 780
-
-                VStack(
-                    alignment: .leading,
-                    spacing: 0
-                ) {
-                    // MARK: Hero
-                    HStack(
-                        alignment: .top,
-                        spacing: 10
-                    ) {
-                        VStack(
-                            alignment: .leading,
-                            spacing: 7
-                        ) {
-                            HStack(spacing: 2) {
-                                Text("パシャ")
-                                    .foregroundStyle(.white)
-
-                                Text("査定")
-                                    .foregroundStyle(green)
-                            }
-                            .font(
-                                .system(
-                                    size:
-                                        compact
-                                        ? 33
-                                        : 37,
-                                    weight: .black,
-                                    design: .rounded
-                                )
-                            )
-
-                            // Break only at a natural phrase boundary.
-                            Text(
-                                "写真から、売れる相場を\nすばやくチェック"
-                            )
-                            .font(
-                                .system(
-                                    size:
-                                        compact
-                                        ? 13.5
-                                        : 15,
-                                    weight: .bold
-                                )
-                            )
-                            .foregroundStyle(
-                                .white.opacity(0.94)
-                            )
-                            .fixedSize(
-                                horizontal: false,
-                                vertical: true
-                            )
-
-                            Text(
-                                "メルカリ・Yahoo!フリマ・楽天ラクマの\n価格をまとめて比較"
-                            )
-                            .font(
-                                .system(
-                                    size:
-                                        compact
-                                        ? 10.5
-                                        : 11.5,
-                                    weight: .medium
-                                )
-                            )
-                            .foregroundStyle(.secondary)
-                            .fixedSize(
-                                horizontal: false,
-                                vertical: true
-                            )
-
-                            HStack(spacing: 10) {
-                                MarketplaceRemoteLogoTile(
-                                    logoURL:
-                                        "https://commons.wikimedia.org/wiki/Special:Redirect/file/Mercari_logo.svg?width=180",
-                                    label: "メルカリ"
-                                )
-
-                                MarketplaceRemoteLogoTile(
-                                    logoURL:
-                                        "https://commons.wikimedia.org/wiki/Special:Redirect/file/Yahoo_Japan_Logo.svg?width=180",
-                                    label: "Yahoo!フリマ"
-                                )
-
-                                MarketplaceRemoteLogoTile(
-                                    logoURL:
-                                        "https://commons.wikimedia.org/wiki/Special:Redirect/file/Rakuten_R_logo.svg?width=160",
-                                    label: "楽天ラクマ"
-                                )
-                            }
-                        }
-
-                        Spacer(minLength: 4)
-
-                        RemoteGuitarHero(
-                            compact: compact
-                        )
-                    }
-                    .padding(
-                        .horizontal,
-                        2
-                    )
-                    .frame(
-                        height:
-                            compact
-                            ? 220
-                            : 238
-                    )
-
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 5
-                            : 8
-                    )
-
-                    // MARK: Guide
-                    Button {
-                        showUsageGuide = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(
-                                    cornerRadius: 13
-                                )
-                                .fill(
-                                    green.opacity(0.15)
-                                )
-                                .frame(
-                                    width: 50,
-                                    height: 50
-                                )
-
-                                Image(
-                                    systemName:
-                                        "lightbulb.fill"
-                                )
-                                .font(.title3)
-                                .foregroundStyle(green)
-                            }
-
-                            VStack(
-                                alignment: .leading,
-                                spacing: 3
-                            ) {
-                                Text(
-                                    "使い方・撮影のコツ"
-                                )
-                                .font(.headline)
-
-                                Text(
-                                    "正確に判定するためのポイントを見る"
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Image(
-                                systemName:
-                                    "chevron.right"
-                            )
-                            .font(.headline)
-                        }
-                        .padding(
-                            .horizontal,
-                            14
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight:
-                                compact
-                                ? 58
-                                : 64
-                        )
-                        .background(
-                            LinearGradient(
-                                colors: [
-                                    green.opacity(0.15),
-                                    Color.white.opacity(0.05)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .overlay(
-                            RoundedRectangle(
-                                cornerRadius: 18
-                            )
-                            .stroke(
-                                green.opacity(0.40),
-                                lineWidth: 1
-                            )
-                        )
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 18
-                            )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 5
-                            : 8
-                    )
-
-                    // MARK: Features
-                    HStack(spacing: 5) {
-                        PremiumFeatureItem(
-                            icon: "sparkles",
-                            title: "AI商品判定",
-                            subtitle:
-                                "写真から商品名・型番を特定"
-                        )
-
-                        PremiumFeatureItem(
-                            icon: "chart.bar.fill",
-                            title: "3サイト相場比較",
-                            subtitle:
-                                "3サイトの価格を一括比較"
-                        )
-
-                        PremiumFeatureItem(
-                            icon: "tag.fill",
-                            title: "出品までスムーズ",
-                            subtitle:
-                                "相場を見てすぐ出品"
-                        )
-                    }
-                    .frame(
-                        height:
-                            compact
-                            ? 78
-                            : 88
-                    )
-
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 5
-                            : 8
-                    )
-
-                    // MARK: Camera
-                    Button {
-                        showCamera = true
-                    } label: {
-                        HStack(spacing: 13) {
-                            Image(
-                                systemName:
-                                    "camera.fill"
-                            )
-                            .font(.title2)
-
-                            Text("カメラで撮影")
-                                .font(.title3.bold())
-
-                            Spacer()
-
-                            Image(
-                                systemName:
-                                    "chevron.right"
-                            )
-                            .font(.headline)
-                        }
-                        .padding(
-                            .horizontal,
-                            20
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight:
-                                compact
-                                ? 60
-                                : 68
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.black)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color(
-                                    red: 83 / 255,
-                                    green: 238 / 255,
-                                    blue: 154 / 255
-                                ),
-                                green
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(
-                        color:
-                            green.opacity(0.27),
-                        radius: 13,
-                        y: 4
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 18
-                        )
-                    )
-
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 5
-                            : 8
-                    )
-
-                    // MARK: Photo
-                    PhotosPicker(
-                        selection: $selectedPhoto,
-                        matching: .images
-                    ) {
-                        HStack(spacing: 12) {
-                            Image(
-                                systemName:
-                                    "photo.fill"
-                            )
-                            .font(.title3)
-
-                            Text("写真を選ぶ")
-                                .font(.headline)
-
-                            Spacer()
-
-                            Image(
-                                systemName:
-                                    "chevron.right"
-                            )
-                            .font(.subheadline.bold())
-                        }
-                        .padding(
-                            .horizontal,
-                            18
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight:
-                                compact
-                                ? 54
-                                : 60
-                        )
-                        .background(
-                            Color.white.opacity(0.075)
-                        )
-                        .overlay(
-                            RoundedRectangle(
-                                cornerRadius: 17
-                            )
-                            .stroke(
-                                Color.white.opacity(0.18),
-                                lineWidth: 1
-                            )
-                        )
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 17
-                            )
-                        )
-                    }
-                    .foregroundStyle(.white)
-
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 5
-                            : 8
-                    )
-
-                    // MARK: Previous result
-                    if hasPreviousResult {
-                        Button(
-                            action:
-                                onOpenPreviousResult
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(
-                                    systemName:
-                                        "clock.arrow.circlepath"
-                                )
-
-                                Text(
-                                    "前回の検索結果を見る"
-                                )
-                                .font(.subheadline.bold())
-
-                                Spacer()
-
-                                Image(
-                                    systemName:
-                                        "chevron.right"
-                                )
-                                .font(.caption.bold())
-                            }
-                            .padding(
-                                .horizontal,
-                                16
-                            )
-                            .frame(
-                                maxWidth: .infinity,
-                                minHeight:
-                                    compact
-                                    ? 46
-                                    : 50
-                            )
-                            .background(
-                                green.opacity(0.08)
-                            )
-                            .overlay(
-                                RoundedRectangle(
-                                    cornerRadius: 15
-                                )
-                                .stroke(
-                                    green.opacity(0.34),
-                                    lineWidth: 1
-                                )
-                            )
-                            .clipShape(
-                                RoundedRectangle(
-                                    cornerRadius: 15
-                                )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(green)
-                    }
-
-                    // No large empty spacer at the bottom.
-                    Spacer(
-                        minLength:
-                            compact
-                            ? 2
-                            : 4
-                    )
-                }
-                .padding(
-                    .horizontal,
-                    16
-                )
-                .padding(.top, 6)
-                .padding(.bottom, 5)
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .top
+                HomeScreenContent(
+                    selectedPhoto: $selectedPhoto,
+                    showCamera: $showCamera,
+                    showUsageGuide: $showUsageGuide,
+                    hasPreviousResult: hasPreviousResult,
+                    onOpenPreviousResult: onOpenPreviousResult,
+                    compact: geometry.size.height < 780
                 )
             }
         }
@@ -891,6 +435,539 @@ struct HomeView: View {
         ) {
             UsageGuideView()
         }
+    }
+}
+
+struct HomeScreenContent: View {
+    @Binding var selectedPhoto: PhotosPickerItem?
+    @Binding var showCamera: Bool
+    @Binding var showUsageGuide: Bool
+
+    let hasPreviousResult: Bool
+    let onOpenPreviousResult: () -> Void
+    let compact: Bool
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 0
+        ) {
+            HomeHeroSection(
+                compact: compact
+            )
+
+            Spacer(
+                minLength:
+                    compact ? 5 : 8
+            )
+
+            HomeGuideButton(
+                compact: compact,
+                action: {
+                    showUsageGuide = true
+                }
+            )
+
+            Spacer(
+                minLength:
+                    compact ? 5 : 8
+            )
+
+            HomeFeatureRow(
+                compact: compact
+            )
+
+            Spacer(
+                minLength:
+                    compact ? 5 : 8
+            )
+
+            HomeCameraButton(
+                compact: compact,
+                action: {
+                    showCamera = true
+                }
+            )
+
+            Spacer(
+                minLength:
+                    compact ? 5 : 8
+            )
+
+            HomePhotoPicker(
+                selectedPhoto:
+                    $selectedPhoto,
+                compact: compact
+            )
+
+            Spacer(
+                minLength:
+                    compact ? 5 : 8
+            )
+
+            if hasPreviousResult {
+                HomePreviousButton(
+                    compact: compact,
+                    action:
+                        onOpenPreviousResult
+                )
+            }
+
+            Spacer(
+                minLength:
+                    compact ? 2 : 4
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 5)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: .top
+        )
+    }
+}
+
+struct HomeHeroSection: View {
+    let compact: Bool
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        HStack(
+            alignment: .top,
+            spacing: 10
+        ) {
+            VStack(
+                alignment: .leading,
+                spacing: 7
+            ) {
+                HStack(spacing: 2) {
+                    Text("パシャ")
+                        .foregroundStyle(.white)
+
+                    Text("査定")
+                        .foregroundStyle(green)
+                }
+                .font(
+                    .system(
+                        size:
+                            compact
+                            ? 33
+                            : 37,
+                        weight: .black,
+                        design: .rounded
+                    )
+                )
+
+                Text(
+                    "写真から、売れる相場を\nすばやくチェック"
+                )
+                .font(
+                    .system(
+                        size:
+                            compact
+                            ? 13.5
+                            : 15,
+                        weight: .bold
+                    )
+                )
+                .foregroundStyle(
+                    .white.opacity(0.94)
+                )
+                .fixedSize(
+                    horizontal: false,
+                    vertical: true
+                )
+
+                Text(
+                    "メルカリ・Yahoo!フリマ・楽天ラクマの\n価格をまとめて比較"
+                )
+                .font(
+                    .system(
+                        size:
+                            compact
+                            ? 10.5
+                            : 11.5,
+                        weight: .medium
+                    )
+                )
+                .foregroundStyle(.secondary)
+                .fixedSize(
+                    horizontal: false,
+                    vertical: true
+                )
+
+                MarketplaceLogoRow()
+            }
+
+            Spacer(minLength: 4)
+
+            RemoteGuitarHero(
+                compact: compact
+            )
+        }
+        .padding(.horizontal, 2)
+        .frame(
+            height:
+                compact
+                ? 220
+                : 238
+        )
+    }
+}
+
+struct MarketplaceLogoRow: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            MarketplaceRemoteLogoTile(
+                logoURL:
+                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Mercari_logo.svg?width=180",
+                label: "メルカリ"
+            )
+
+            MarketplaceRemoteLogoTile(
+                logoURL:
+                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Yahoo_Japan_Logo.svg?width=180",
+                label: "Yahoo!フリマ"
+            )
+
+            MarketplaceRemoteLogoTile(
+                logoURL:
+                    "https://commons.wikimedia.org/wiki/Special:Redirect/file/Rakuten_R_logo.svg?width=160",
+                label: "楽天ラクマ"
+            )
+        }
+    }
+}
+
+struct HomeGuideButton: View {
+    let compact: Bool
+    let action: () -> Void
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(
+                        cornerRadius: 13
+                    )
+                    .fill(
+                        green.opacity(0.15)
+                    )
+                    .frame(
+                        width: 50,
+                        height: 50
+                    )
+
+                    Image(
+                        systemName:
+                            "lightbulb.fill"
+                    )
+                    .font(.title3)
+                    .foregroundStyle(green)
+                }
+
+                VStack(
+                    alignment: .leading,
+                    spacing: 3
+                ) {
+                    Text(
+                        "使い方・撮影のコツ"
+                    )
+                    .font(.headline)
+
+                    Text(
+                        "正確に判定するためのポイントを見る"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(
+                    systemName:
+                        "chevron.right"
+                )
+                .font(.headline)
+            }
+            .padding(.horizontal, 14)
+            .frame(
+                maxWidth: .infinity,
+                minHeight:
+                    compact
+                    ? 58
+                    : 64
+            )
+            .background(
+                LinearGradient(
+                    colors: [
+                        green.opacity(0.15),
+                        Color.white.opacity(0.05)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: 18
+                )
+                .stroke(
+                    green.opacity(0.40),
+                    lineWidth: 1
+                )
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 18
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+    }
+}
+
+struct HomeFeatureRow: View {
+    let compact: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            PremiumFeatureItem(
+                icon: "sparkles",
+                title: "AI商品判定",
+                subtitle:
+                    "写真から商品名・型番を特定"
+            )
+
+            PremiumFeatureItem(
+                icon: "chart.bar.fill",
+                title: "3サイト相場比較",
+                subtitle:
+                    "3サイトの価格を一括比較"
+            )
+
+            PremiumFeatureItem(
+                icon: "tag.fill",
+                title: "出品までスムーズ",
+                subtitle:
+                    "相場を見てすぐ出品"
+            )
+        }
+        .frame(
+            height:
+                compact
+                ? 78
+                : 88
+        )
+    }
+}
+
+struct HomeCameraButton: View {
+    let compact: Bool
+    let action: () -> Void
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(
+                    systemName:
+                        "camera.fill"
+                )
+                .font(.title2)
+
+                Text("カメラで撮影")
+                    .font(.title3.bold())
+
+                Spacer()
+
+                Image(
+                    systemName:
+                        "chevron.right"
+                )
+                .font(.headline)
+            }
+            .padding(.horizontal, 20)
+            .frame(
+                maxWidth: .infinity,
+                minHeight:
+                    compact
+                    ? 60
+                    : 68
+            )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.black)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(
+                        red: 83 / 255,
+                        green: 238 / 255,
+                        blue: 154 / 255
+                    ),
+                    green
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .shadow(
+            color:
+                green.opacity(0.27),
+            radius: 13,
+            y: 4
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: 18
+            )
+        )
+    }
+}
+
+struct HomePhotoPicker: View {
+    @Binding var selectedPhoto: PhotosPickerItem?
+    let compact: Bool
+
+    var body: some View {
+        PhotosPicker(
+            selection: $selectedPhoto,
+            matching: .images
+        ) {
+            HStack(spacing: 12) {
+                Image(
+                    systemName:
+                        "photo.fill"
+                )
+                .font(.title3)
+
+                Text("写真を選ぶ")
+                    .font(.headline)
+
+                Spacer()
+
+                Image(
+                    systemName:
+                        "chevron.right"
+                )
+                .font(.subheadline.bold())
+            }
+            .padding(.horizontal, 18)
+            .frame(
+                maxWidth: .infinity,
+                minHeight:
+                    compact
+                    ? 54
+                    : 60
+            )
+            .background(
+                Color.white.opacity(0.075)
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: 17
+                )
+                .stroke(
+                    Color.white.opacity(0.18),
+                    lineWidth: 1
+                )
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 17
+                )
+            )
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+struct HomePreviousButton: View {
+    let compact: Bool
+    let action: () -> Void
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(
+                    systemName:
+                        "clock.arrow.circlepath"
+                )
+
+                Text(
+                    "前回の検索結果を見る"
+                )
+                .font(.subheadline.bold())
+
+                Spacer()
+
+                Image(
+                    systemName:
+                        "chevron.right"
+                )
+                .font(.caption.bold())
+            }
+            .padding(.horizontal, 16)
+            .frame(
+                maxWidth: .infinity,
+                minHeight:
+                    compact
+                    ? 46
+                    : 50
+            )
+            .background(
+                green.opacity(0.08)
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: 15
+                )
+                .stroke(
+                    green.opacity(0.34),
+                    lineWidth: 1
+                )
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 15
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(green)
     }
 }
 
@@ -1030,6 +1107,7 @@ struct RemoteGuitarHero: View {
                 default:
                     ZStack {
                         Color.black
+
                         ProgressView()
                             .tint(green)
                     }
@@ -1075,6 +1153,7 @@ struct RemoteGuitarHero: View {
             VStack {
                 HStack {
                     Spacer()
+
                     PriceBubble(
                         title: "メルカリ",
                         price: "12,980円"
