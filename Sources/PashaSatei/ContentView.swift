@@ -1248,6 +1248,63 @@ struct CompareView: View {
                         }
                     )
 
+
+                    VStack(
+                        alignment: .leading,
+                        spacing: 12
+                    ) {
+                        Text("この商品を出品する")
+                            .font(.headline)
+
+                        Text(
+                            "各販売サイトの出品画面を直接開きます"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            SellSiteButton(
+                                title: "メルカリ",
+                                systemImage: "shippingbox.fill",
+                                urlString: "https://jp.mercari.com/sell"
+                            )
+
+                            SellSiteButton(
+                                title: "Yahoo!フリマ",
+                                systemImage: "cart.fill",
+                                urlString: "https://paypayfleamarket.yahoo.co.jp/sell"
+                            )
+
+                            SellSiteButton(
+                                title: "楽天ラクマ",
+                                systemImage: "bag.fill",
+                                urlString: "https://fril.jp/item/new"
+                            )
+                        }
+                    }
+                    .padding(16)
+                    .background(
+                        Color(
+                            red: 24 / 255,
+                            green: 24 / 255,
+                            blue: 26 / 255
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(
+                            cornerRadius: 18
+                        )
+                        .stroke(
+                            green.opacity(0.35),
+                            lineWidth: 1
+                        )
+                    )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 18
+                        )
+                    )
+
                 }
                 .padding(16)
             }
@@ -1523,7 +1580,10 @@ struct CompareView: View {
     @MainActor
     private func loadRakumaPrice() async {
         let candidates =
-            stableSearchCandidates
+            Array(
+                stableSearchCandidates
+                    .prefix(3)
+            )
 
         guard !candidates.isEmpty else {
             return
@@ -1532,42 +1592,56 @@ struct CompareView: View {
         isLoadingRakuma = true
         rakumaError = ""
 
-        var bestResult: YahooPriceResponse?
-
-        for query in candidates {
-            let result =
-                await RakumaPriceAPI.fetch(
-                    productName: query
-                )
-
-            if let result,
-               result.ok {
-                if bestResult == nil
-                    || result.count > (bestResult?.count ?? 0) {
-                    bestResult = result
+        // Rakuma is slower than the other services, so search the stable
+        // candidate names in parallel and keep the result with the most hits.
+        let results =
+            await withTaskGroup(
+                of: YahooPriceResponse?.self
+            ) { group in
+                for query in candidates {
+                    group.addTask {
+                        await RakumaPriceAPI.fetch(
+                            productName: query
+                        )
+                    }
                 }
 
-                if result.count >= 5 {
-                    break
+                var collected:
+                    [YahooPriceResponse] = []
+
+                for await result in group {
+                    if let result,
+                       result.ok {
+                        collected.append(result)
+                    }
                 }
+
+                return collected
             }
-        }
 
-        // One final retry of the most stable query if Rakuma returned nothing.
-        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+        var bestResult =
+            results.max {
+                $0.count < $1.count
+            }
+
+        // One automatic retry only when all parallel searches returned zero.
+        if bestResult == nil
+            || (bestResult?.count ?? 0) == 0 {
+
             try? await Task.sleep(
-                nanoseconds: 800_000_000
+                nanoseconds: 500_000_000
             )
 
-            if let retryQuery = candidates.first {
+            if let retryQuery =
+                candidates.first {
+
                 let retry =
                     await RakumaPriceAPI.fetch(
                         productName: retryQuery
                     )
 
                 if let retry,
-                   retry.ok,
-                   retry.count > (bestResult?.count ?? 0) {
+                   retry.ok {
                     bestResult = retry
                 }
             }
@@ -1668,6 +1742,60 @@ struct CompareView: View {
             string: market.searchBaseURL + encoded
         ) {
             openURL(url)
+        }
+    }
+}
+
+struct SellSiteButton: View {
+    let title: String
+    let systemImage: String
+    let urlString: String
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    var body: some View {
+        if let url = URL(string: urlString) {
+            Link(destination: url) {
+                VStack(spacing: 7) {
+                    Image(systemName: systemImage)
+                        .font(.title3)
+
+                    Text(title)
+                        .font(.caption.bold())
+                        .multilineTextAlignment(.center)
+
+                    Text("出品")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: 78
+                )
+                .foregroundStyle(green)
+                .background(
+                    green.opacity(0.10)
+                )
+                .overlay(
+                    RoundedRectangle(
+                        cornerRadius: 14
+                    )
+                    .stroke(
+                        green.opacity(0.35),
+                        lineWidth: 1
+                    )
+                )
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 14
+                    )
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 }
