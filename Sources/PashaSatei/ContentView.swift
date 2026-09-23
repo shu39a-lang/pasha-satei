@@ -951,30 +951,29 @@ struct HomePreviousButton: View {
 struct MarketplaceLogoRow: View {
     var body: some View {
         HStack(spacing: 10) {
-            MarketplaceOfficialLogoTile(
-                logoURL:
-                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Mercari_logo.svg/256px-Mercari_logo.svg.png",
-                padding: 7
-            )
+            MarketplaceIconTile {
+                MercariLocalMark()
+            }
 
-            MarketplaceOfficialLogoTile(
-                logoURL:
-                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Yahoo_Japan_logo.svg/256px-Yahoo_Japan_logo.svg.png",
-                padding: 7
-            )
+            MarketplaceIconTile {
+                YahooFleamarketLocalMark()
+            }
 
-            MarketplaceOfficialLogoTile(
-                logoURL:
-                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Rakuten_R_logo.svg/256px-Rakuten_R_logo.svg.png",
-                padding: 6
-            )
+            MarketplaceIconTile {
+                RakumaLocalMark()
+            }
         }
     }
 }
 
-struct MarketplaceOfficialLogoTile: View {
-    let logoURL: String
-    let padding: CGFloat
+struct MarketplaceIconTile<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    init(
+        @ViewBuilder content: () -> Content
+    ) {
+        self.content = content()
+    }
 
     var body: some View {
         RoundedRectangle(
@@ -986,17 +985,8 @@ struct MarketplaceOfficialLogoTile: View {
             height: 43
         )
         .overlay {
-            AsyncImage(
-                url: URL(string: logoURL)
-            ) { image in
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .padding(padding)
-            } placeholder: {
-                ProgressView()
-                    .scaleEffect(0.65)
-            }
+            content
+                .padding(5)
         }
         .overlay(
             RoundedRectangle(
@@ -1007,6 +997,282 @@ struct MarketplaceOfficialLogoTile: View {
                 lineWidth: 1
             )
         )
+    }
+}
+
+struct MercariLocalMark: View {
+    var body: some View {
+        ZStack(
+            alignment: .topTrailing
+        ) {
+            MercariHexagon()
+                .fill(
+                    Color(
+                        red: 242 / 255,
+                        green: 53 / 255,
+                        blue: 47 / 255
+                    )
+                )
+                .padding(2)
+
+            Text("m")
+                .font(
+                    .system(
+                        size: 20,
+                        weight: .bold,
+                        design: .rounded
+                    )
+                )
+                .foregroundStyle(.white)
+                .offset(
+                    x: -7,
+                    y: 8
+                )
+
+            Circle()
+                .fill(
+                    Color(
+                        red: 77 / 255,
+                        green: 181 / 255,
+                        blue: 229 / 255
+                    )
+                )
+                .frame(
+                    width: 13,
+                    height: 13
+                )
+                .offset(
+                    x: -1,
+                    y: 1
+                )
+        }
+    }
+}
+
+struct MercariHexagon: Shape {
+    func path(
+        in rect: CGRect
+    ) -> Path {
+        var path = Path()
+
+        path.move(
+            to: CGPoint(
+                x: rect.midX,
+                y: rect.minY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.maxX,
+                y: rect.minY
+                    + rect.height * 0.27
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.maxX,
+                y: rect.maxY
+                    - rect.height * 0.27
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.midX,
+                y: rect.maxY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.minX,
+                y: rect.maxY
+                    - rect.height * 0.27
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.minX,
+                y: rect.minY
+                    + rect.height * 0.27
+            )
+        )
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+struct YahooFleamarketLocalMark: View {
+    private let red = Color(
+        red: 255 / 255,
+        green: 38 / 255,
+        blue: 83 / 255
+    )
+
+    private let yellow = Color(
+        red: 255 / 255,
+        green: 178 / 255,
+        blue: 48 / 255
+    )
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                Spacer(
+                    minLength: 3
+                )
+
+                ZStack(
+                    alignment: .top
+                ) {
+                    Triangle()
+                        .fill(red)
+                        .frame(
+                            width: 28,
+                            height: 19
+                        )
+
+                    Rectangle()
+                        .fill(yellow)
+                        .frame(
+                            width: 30,
+                            height: 5
+                        )
+                        .offset(y: 15)
+                }
+
+                HStack(spacing: 6) {
+                    RoundedRectangle(
+                        cornerRadius: 2
+                    )
+                    .fill(red)
+                    .frame(
+                        width: 10,
+                        height: 12
+                    )
+
+                    RoundedRectangle(
+                        cornerRadius: 2
+                    )
+                    .fill(red)
+                    .frame(
+                        width: 10,
+                        height: 12
+                    )
+                }
+
+                Spacer(
+                    minLength: 1
+                )
+            }
+
+            Path { path in
+                path.move(
+                    to: CGPoint(
+                        x: 22,
+                        y: 2
+                    )
+                )
+                path.addLine(
+                    to: CGPoint(
+                        x: 22,
+                        y: 10
+                    )
+                )
+            }
+            .stroke(
+                yellow,
+                lineWidth: 2
+            )
+
+            Triangle()
+                .fill(yellow)
+                .frame(
+                    width: 9,
+                    height: 7
+                )
+                .rotationEffect(
+                    .degrees(90)
+                )
+                .offset(
+                    x: 6,
+                    y: -12
+                )
+        }
+    }
+}
+
+struct Triangle: Shape {
+    func path(
+        in rect: CGRect
+    ) -> Path {
+        var path = Path()
+
+        path.move(
+            to: CGPoint(
+                x: rect.midX,
+                y: rect.minY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.maxX,
+                y: rect.maxY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.minX,
+                y: rect.maxY
+            )
+        )
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+struct RakumaLocalMark: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: 5
+            )
+            .fill(Color.white)
+
+            HStack(spacing: 0) {
+                ZStack {
+                    Color(
+                        red: 39 / 255,
+                        green: 77 / 255,
+                        blue: 181 / 255
+                    )
+
+                    Text("R")
+                        .font(
+                            .system(
+                                size: 13,
+                                weight: .bold,
+                                design: .serif
+                            )
+                        )
+                        .foregroundStyle(.white)
+                }
+
+                Color.white
+
+                Color(
+                    red: 225 / 255,
+                    green: 54 / 255,
+                    blue: 72 / 255
+                )
+            }
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 5
+                )
+            )
+            .padding(2)
+        }
     }
 }
 
