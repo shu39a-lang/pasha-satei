@@ -3206,7 +3206,7 @@ final class NearbyBuybackStoreLocator:
             }
 
             Task { @MainActor in
-                isLoading = false
+                self.isLoading = false
 
                 guard error == nil,
                       let items =
