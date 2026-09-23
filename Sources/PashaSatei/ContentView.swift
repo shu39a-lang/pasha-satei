@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
-import Vision
+@preconcurrency import Vision
 
 enum AppRoute: Hashable {
     case result
@@ -987,28 +987,15 @@ struct MarketplaceRemoteLogoTile: View {
             )
             .overlay {
                 AsyncImage(
-                    url: URL(
-                        string: logoURL
-                    )
-                ) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .padding(5)
-
-                    case .failure:
-                        Image(
-                            systemName:
-                                "storefront.fill"
-                        )
-                        .foregroundStyle(.gray)
-
-                    default:
-                        ProgressView()
-                            .scaleEffect(0.65)
-                    }
+                    url: URL(string: logoURL)
+                ) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .padding(5)
+                } placeholder: {
+                    ProgressView()
+                        .scaleEffect(0.65)
                 }
             }
 
@@ -1074,43 +1061,20 @@ struct RemoteGuitarHero: View {
                     string:
                         "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?auto=format&fit=crop&w=700&q=88"
                 )
-            ) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
+            ) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                ZStack {
+                    Color(
+                        red: 10 / 255,
+                        green: 26 / 255,
+                        blue: 20 / 255
+                    )
 
-                case .failure:
-                    ZStack {
-                        Color(
-                            red: 10 / 255,
-                            green: 26 / 255,
-                            blue: 20 / 255
-                        )
-
-                        Image(
-                            systemName:
-                                "guitars.fill"
-                        )
-                        .font(
-                            .system(
-                                size:
-                                    compact
-                                    ? 44
-                                    : 52
-                            )
-                        )
-                        .foregroundStyle(green)
-                    }
-
-                default:
-                    ZStack {
-                        Color.black
-
-                        ProgressView()
-                            .tint(green)
-                    }
+                    ProgressView()
+                        .tint(green)
                 }
             }
             .frame(
