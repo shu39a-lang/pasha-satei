@@ -3090,7 +3090,7 @@ struct CompareView: View {
                         alignment: .leading,
                         spacing: 12
                     ) {
-                        Text("この商品を出品する")
+                        Text("この商品を出品するには")
                             .font(.headline)
 
                         Text(
@@ -3101,10 +3101,8 @@ struct CompareView: View {
 
                         ListingPreparationCard(
                             image: image,
-                            productName: productName,
                             brand: brand,
-                            modelNumber: modelNumber,
-                            barcode: barcode
+                            modelNumber: modelNumber
                         )
 
                         HStack(spacing: 10) {
@@ -4423,16 +4421,13 @@ struct NearbyStoreActionStyle:
 
 struct ListingPreparationCard: View {
     let image: UIImage?
-    let productName: String
     let brand: String
     let modelNumber: String
-    let barcode: String
 
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var extraPhotos: [UIImage] = []
     @State private var showCamera = false
     @State private var showTextExporter = false
-    @State private var draftTitle = ""
     @State private var draftBody = ""
     @State private var statusMessage = ""
 
@@ -4441,13 +4436,14 @@ struct ListingPreparationCard: View {
         green: 211 / 255,
         blue: 119 / 255
     )
+    private let blue = Color(red: 66 / 255, green: 160 / 255, blue: 245 / 255)
 
     private var allPhotos: [UIImage] {
         (image.map { [$0] } ?? []) + extraPhotos
     }
 
     private var fullDraft: String {
-        "\(draftTitle)\n\n\(draftBody)"
+        draftBody
     }
 
     var body: some View {
@@ -4459,6 +4455,10 @@ struct ListingPreparationCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Text("写真")
+                .font(.caption.bold())
+                .foregroundStyle(blue)
+
             HStack(spacing: 10) {
                 PhotosPicker(
                     selection: $selectedPhotos,
@@ -4466,17 +4466,26 @@ struct ListingPreparationCard: View {
                     matching: .images
                 ) {
                     Label("写真を追加", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(blue.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
 
                 Button {
                     showCamera = true
                 } label: {
                     Label("撮影して追加", systemImage: "camera")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(blue.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .disabled(extraPhotos.count >= 9)
             }
             .font(.caption.bold())
-            .foregroundStyle(green)
+            .foregroundStyle(blue)
+            .buttonStyle(.plain)
 
             if !allPhotos.isEmpty {
                 ScrollView(.horizontal) {
@@ -4513,13 +4522,21 @@ struct ListingPreparationCard: View {
                     Task { await savePhotosToLibrary() }
                 } label: {
                     Label("写真アプリに保存（\(allPhotos.count)枚）", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(blue)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .font(.caption.bold())
-                .foregroundStyle(green)
+                .buttonStyle(.plain)
             }
 
-            TextField("出品タイトル", text: $draftTitle)
-                .textFieldStyle(.roundedBorder)
+            Divider()
+
+            Text("出品用の文章（空欄は編集できます）")
+                .font(.caption.bold())
+                .foregroundStyle(green)
 
             TextEditor(text: $draftBody)
                 .frame(height: 160)
@@ -4528,31 +4545,34 @@ struct ListingPreparationCard: View {
                 .background(Color.white.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            HStack(spacing: 16) {
-                Button {
-                    UIPasteboard.general.string = draftTitle
-                    statusMessage = "商品名をコピーしました"
-                } label: {
-                    Label("商品名をコピー", systemImage: "doc.on.doc")
-                }
-
-                Button {
-                    UIPasteboard.general.string = draftBody
-                    statusMessage = "説明文をコピーしました"
-                } label: {
-                    Label("説明文をコピー", systemImage: "doc.on.doc")
-                }
+            Button {
+                UIPasteboard.general.string = draftBody
+                statusMessage = "出品用の文章をコピーしました"
+            } label: {
+                Label("出品用の文章をコピー", systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(green)
+                    .foregroundStyle(.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .font(.caption.bold())
-            .foregroundStyle(green)
+            .buttonStyle(.plain)
 
             Button {
                 showTextExporter = true
             } label: {
-                Label("商品名と説明文をテキスト保存", systemImage: "doc.badge.arrow.up")
+                Label("出品用の文章をテキスト保存", systemImage: "doc.badge.arrow.up")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(green.opacity(0.65), lineWidth: 1)
+                    )
             }
             .font(.caption.bold())
             .foregroundStyle(green)
+            .buttonStyle(.plain)
 
             if !statusMessage.isEmpty {
                 Text(statusMessage)
@@ -4560,7 +4580,7 @@ struct ListingPreparationCard: View {
                     .foregroundStyle(green)
             }
 
-            Text("メルカリのAI出品サポートが表示される場合は、出品画面でオンにし、保存した写真を選べます。文章は必要に応じて貼り付けてください。")
+            Text("メルカリでは保存した写真を使ってAI出品サポートを利用できます。他の販売サイトでは、必要な項目を記入して文章を貼り付けてください。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -4604,24 +4624,16 @@ struct ListingPreparationCard: View {
     }
 
     private func prepareDraftIfNeeded() {
-        guard draftTitle.isEmpty else { return }
-
-        draftTitle = productName
-        if !modelNumber.isEmpty && !draftTitle.contains(modelNumber) {
-            draftTitle += " \(modelNumber)"
-        }
+        guard draftBody.isEmpty else { return }
 
         draftBody = [
-            "商品名：\(productName)",
-            brand.isEmpty ? nil : "ブランド：\(brand)",
-            modelNumber.isEmpty ? nil : "型番：\(modelNumber)",
-            barcode.isEmpty ? nil : "JAN / EAN：\(barcode)",
-            "状態：実物を確認して記入してください",
-            "動作確認：確認して記入してください",
-            "付属品：実際にお渡しするものを記入してください",
-            "傷・汚れ：実物を確認して記入してください"
+            "ブランド：\(brand)",
+            "型番：\(modelNumber)",
+            "状態：",
+            "動作確認：",
+            "付属品：",
+            "追記表示："
         ]
-        .compactMap { $0 }
         .joined(separator: "\n")
     }
 
