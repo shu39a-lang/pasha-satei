@@ -13,7 +13,8 @@ enum AppRoute: Hashable {
         productName: String,
         barcode: String,
         brand: String,
-        modelNumber: String
+        modelNumber: String,
+        draftID: String
     )
 }
 
@@ -105,6 +106,113 @@ struct ListingTextDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+private struct SavedListingDraft: Codable {
+    var id: String
+    var productName: String
+    var barcode: String
+    var brand: String
+    var modelNumber: String
+    var body: String = ""
+    var checkedPhotos: [String] = []
+    var salePrices: [String: String] = [:]
+    var shippingCosts: [String: String] = [:]
+    var extraPhotoCount: Int = 0
+}
+
+private enum ListingDraftStore {
+    private static let latestKey = "pasha.latestListingDraftID"
+
+    private static var root: URL? {
+        guard let base = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        let url = base.appendingPathComponent("ListingDrafts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private static func folder(_ id: String) -> URL? {
+        guard UUID(uuidString: id) != nil, let root else { return nil }
+        let url = root.appendingPathComponent(id, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func load(_ id: String) -> SavedListingDraft? {
+        guard let url = folder(id)?.appendingPathComponent("draft.json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(SavedListingDraft.self, from: data)
+    }
+
+    static func latest() -> SavedListingDraft? {
+        guard let id = UserDefaults.standard.string(forKey: latestKey) else { return nil }
+        return load(id)
+    }
+
+    static func update(
+        id: String, productName: String, barcode: String,
+        brand: String, modelNumber: String,
+        change: (inout SavedListingDraft) -> Void = { _ in }
+    ) {
+        guard let directory = folder(id) else { return }
+        var draft = load(id) ?? SavedListingDraft(
+            id: id, productName: productName, barcode: barcode,
+            brand: brand, modelNumber: modelNumber
+        )
+        draft.productName = productName
+        draft.barcode = barcode
+        draft.brand = brand
+        draft.modelNumber = modelNumber
+        change(&draft)
+        guard let data = try? JSONEncoder().encode(draft) else { return }
+        do {
+            try data.write(to: directory.appendingPathComponent("draft.json"), options: .atomic)
+            UserDefaults.standard.set(id, forKey: latestKey)
+        } catch {
+            // The editable values remain visible even if local storage is unavailable.
+        }
+    }
+
+    static func photo(id: String, index: Int) -> UIImage? {
+        guard let directory = folder(id), index >= 0,
+              let data = try? Data(contentsOf: directory.appendingPathComponent("photo_\(index).jpg"))
+        else { return nil }
+        return UIImage(data: data)
+    }
+
+    static func savePhotos(id: String, main: UIImage?, extras: [UIImage]) {
+        guard let directory = folder(id) else { return }
+        let photos = (main.map { [$0] } ?? []) + extras
+        for (index, image) in photos.enumerated() {
+            let longest = max(image.size.width, image.size.height)
+            let ratio = longest > 1600 ? 1600 / longest : 1
+            let storedImage: UIImage
+            if ratio < 1 {
+                let size = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+                storedImage = UIGraphicsImageRenderer(size: size).image { _ in
+                    image.draw(in: CGRect(origin: .zero, size: size))
+                }
+            } else {
+                storedImage = image
+            }
+            guard let data = storedImage.jpegData(compressionQuality: 0.78) else { continue }
+            try? data.write(
+                to: directory.appendingPathComponent("photo_\(index).jpg"), options: .atomic
+            )
+        }
+        // Remove an old last photo after the user deletes it from the draft.
+        var index = photos.count
+        while FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("photo_\(index).jpg").path
+        ) {
+            try? FileManager.default.removeItem(
+                at: directory.appendingPathComponent("photo_\(index).jpg")
+            )
+            index += 1
+        }
     }
 }
 
@@ -202,6 +310,7 @@ struct ContentView: View {
     @State private var candidates: [String] = []
     @State private var isRecognizing = false
     @State private var hasPreviousSearchResult = false
+    @State private var draftID = UUID().uuidString
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -247,7 +356,8 @@ struct ContentView: View {
                                     productName: selectedName,
                                     barcode: detectedBarcode,
                                     brand: brand,
-                                    modelNumber: modelNumber
+                                    modelNumber: modelNumber,
+                                    draftID: draftID
                                 )
                             )
                         }
@@ -257,22 +367,36 @@ struct ContentView: View {
                     selectedProductName,
                     selectedBarcode,
                     selectedBrand,
-                    selectedModelNumber
+                    selectedModelNumber,
+                    selectedDraftID
                 ):
                     CompareView(
                         image: selectedImage,
                         productName: selectedProductName,
                         barcode: selectedBarcode,
                         brand: selectedBrand,
-                        modelNumber: selectedModelNumber
+                        modelNumber: selectedModelNumber,
+                        draftID: selectedDraftID
                     )
                 }
             }
+        }
+        .onAppear {
+            guard !hasPreviousSearchResult,
+                  let saved = ListingDraftStore.latest() else { return }
+            draftID = saved.id
+            productName = saved.productName
+            detectedBarcode = saved.barcode
+            brand = saved.brand
+            modelNumber = saved.modelNumber
+            selectedImage = ListingDraftStore.photo(id: saved.id, index: 0)
+            hasPreviousSearchResult = true
         }
         .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showCamera) {
     CameraPicker(
         onImage: { image in
+            draftID = UUID().uuidString
             selectedImage = image
             showCamera = false
 
@@ -298,6 +422,7 @@ struct ContentView: View {
                     return
                 }
 
+                draftID = UUID().uuidString
                 selectedImage = image
                 selectedPhoto = nil
                 isRecognizing = true
@@ -2987,6 +3112,7 @@ struct CompareView: View {
     let barcode: String
     let brand: String
     let modelNumber: String
+    let draftID: String
 
     @State private var salePrices: [String: String] = [:]
     @State private var shippingCosts: [String: String] = [:]
@@ -3094,36 +3220,23 @@ struct CompareView: View {
                             .font(.headline)
 
                         Text(
-                            "各販売サイトの出品画面を直接開きます"
+                            "写真・文章・価格を準備してから出品先を開きます"
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                         ListingPreparationCard(
                             image: image,
+                            productName: productName,
+                            barcode: barcode,
                             brand: brand,
-                            modelNumber: modelNumber
+                            modelNumber: modelNumber,
+                            draftID: draftID,
+                            salePrices: $salePrices,
+                            shippingCosts: $shippingCosts,
+                            bestMarketName: bestMarketName,
+                            onSearch: { market in openMarket(market: market) }
                         )
-
-                        HStack(spacing: 10) {
-                            SellSiteButton(
-                                title: "メルカリ",
-                                systemImage: "shippingbox.fill",
-                                urlString: "https://jp.mercari.com/sell"
-                            )
-
-                            SellSiteButton(
-                                title: "Yahoo!フリマ",
-                                systemImage: "cart.fill",
-                                urlString: "https://paypayfleamarket.yahoo.co.jp/sell"
-                            )
-
-                            SellSiteButton(
-                                title: "楽天ラクマ",
-                                systemImage: "bag.fill",
-                                urlString: "https://fril.jp/item/new"
-                            )
-                        }
                     }
                     .padding(16)
                     .background(
@@ -3159,6 +3272,15 @@ struct CompareView: View {
         }
         .navigationTitle("販売先比較")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if let saved = ListingDraftStore.load(draftID) {
+                salePrices = saved.salePrices
+                shippingCosts = saved.shippingCosts
+            }
+            persistPriceFields()
+        }
+        .onChange(of: salePrices) { _ in persistPriceFields() }
+        .onChange(of: shippingCosts) { _ in persistPriceFields() }
         .task(id: productName) {
             // First load after a build/cold start can be slower.
             // Load the two fast marketplaces first, then Rakuma.
@@ -3173,6 +3295,16 @@ struct CompareView: View {
             )
 
             await loadRakumaPrice()
+        }
+    }
+
+    private func persistPriceFields() {
+        ListingDraftStore.update(
+            id: draftID, productName: productName, barcode: barcode,
+            brand: brand, modelNumber: modelNumber
+        ) { draft in
+            draft.salePrices = salePrices
+            draft.shippingCosts = shippingCosts
         }
     }
 
@@ -4421,8 +4553,15 @@ struct NearbyStoreActionStyle:
 
 struct ListingPreparationCard: View {
     let image: UIImage?
+    let productName: String
+    let barcode: String
     let brand: String
     let modelNumber: String
+    let draftID: String
+    @Binding var salePrices: [String: String]
+    @Binding var shippingCosts: [String: String]
+    let bestMarketName: String?
+    let onSearch: (Marketplace) -> Void
 
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var extraPhotos: [UIImage] = []
@@ -4430,6 +4569,9 @@ struct ListingPreparationCard: View {
     @State private var showTextExporter = false
     @State private var draftBody = ""
     @State private var statusMessage = ""
+    @State private var checkedPhotos: Set<String> = []
+
+    private let photoChecks = ["正面", "裏面", "型番", "傷・汚れ", "付属品"]
 
     private let green = Color(
         red: 39 / 255,
@@ -4448,16 +4590,42 @@ struct ListingPreparationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("出品用の写真と文章")
+            Text("出品準備：上から順番に進めてください")
                 .font(.subheadline.bold())
 
-            Text("査定写真に追加の写真を添え、出品前に内容を確認できます。")
+            Text("入力した文章・価格・追加写真は、このiPhoneに自動保存されます。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("写真")
+            Text("① 写真を確認して保存")
                 .font(.caption.bold())
                 .foregroundStyle(blue)
+
+            Text("撮影できたものに印を付けてください。不要な項目はそのままで大丈夫です。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))], spacing: 8) {
+                ForEach(photoChecks, id: \.self) { item in
+                    Button {
+                        if checkedPhotos.contains(item) {
+                            checkedPhotos.remove(item)
+                        } else {
+                            checkedPhotos.insert(item)
+                        }
+                        persistDraft()
+                    } label: {
+                        Label(item, systemImage: checkedPhotos.contains(item) ? "checkmark.circle.fill" : "circle")
+                            .font(.caption)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(blue.opacity(checkedPhotos.contains(item) ? 0.25 : 0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(blue)
+                }
+            }
 
             HStack(spacing: 10) {
                 PhotosPicker(
@@ -4508,6 +4676,7 @@ struct ListingPreparationCard: View {
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         extraPhotos.remove(at: index)
+                                        persistDraft(savePhotos: true)
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .foregroundStyle(.white)
@@ -4534,9 +4703,26 @@ struct ListingPreparationCard: View {
 
             Divider()
 
-            Text("出品用の文章（空欄は編集できます）")
+            Text("② 商品名と説明文をコピー")
                 .font(.caption.bold())
                 .foregroundStyle(green)
+
+            Button {
+                UIPasteboard.general.string = productName
+                statusMessage = "商品名をコピーしました"
+            } label: {
+                Label("商品名をコピー", systemImage: "textformat")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(green, lineWidth: 1))
+            }
+            .font(.caption.bold())
+            .foregroundStyle(green)
+            .buttonStyle(.plain)
+            .disabled(productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Text("出品用の文章（空欄は編集できます）")
+                .font(.caption)
 
             TextEditor(text: $draftBody)
                 .frame(height: 160)
@@ -4574,6 +4760,42 @@ struct ListingPreparationCard: View {
             .foregroundStyle(green)
             .buttonStyle(.plain)
 
+            Divider()
+
+            Text("③ 販売価格と送料を決める")
+                .font(.caption.bold())
+                .foregroundStyle(green)
+
+            Text("相場を見ながら金額を入力してください。予想手取りは各サイトの手数料を仮に10％として計算した目安です。出品前に実際の手数料を確認してください。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            ForEach(marketplaces, id: \.name) { market in
+                MarketplaceCard(
+                    market: market,
+                    salePrice: Binding(
+                        get: { salePrices[market.name] ?? "" },
+                        set: { salePrices[market.name] = $0 }
+                    ),
+                    shippingCost: Binding(
+                        get: { shippingCosts[market.name] ?? "" },
+                        set: { shippingCosts[market.name] = $0 }
+                    ),
+                    isBest: bestMarketName == market.name,
+                    onSearch: { onSearch(market) }
+                )
+            }
+
+            Text("④ 出品先を開く")
+                .font(.caption.bold())
+                .foregroundStyle(green)
+
+            HStack(spacing: 10) {
+                SellSiteButton(title: "メルカリ", systemImage: "shippingbox.fill", urlString: "https://jp.mercari.com/sell")
+                SellSiteButton(title: "Yahoo!フリマ", systemImage: "cart.fill", urlString: "https://paypayfleamarket.yahoo.co.jp/sell")
+                SellSiteButton(title: "楽天ラクマ", systemImage: "bag.fill", urlString: "https://fril.jp/item/new")
+            }
+
             if !statusMessage.isEmpty {
                 Text(statusMessage)
                     .font(.caption)
@@ -4584,7 +4806,8 @@ struct ListingPreparationCard: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .onAppear(perform: prepareDraftIfNeeded)
+        .onAppear(perform: restoreDraft)
+        .onChange(of: draftBody) { _ in persistDraft() }
         .onChange(of: selectedPhotos) { items in
             guard !items.isEmpty else { return }
             Task { @MainActor in
@@ -4596,12 +4819,16 @@ struct ListingPreparationCard: View {
                     }
                 }
                 selectedPhotos = []
+                persistDraft(savePhotos: true)
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(
                 onImage: { photo in
-                    extraPhotos.append(photo)
+                    if extraPhotos.count < 9 {
+                        extraPhotos.append(photo)
+                        persistDraft(savePhotos: true)
+                    }
                     showCamera = false
                 },
                 onCancel: { showCamera = false }
@@ -4623,18 +4850,44 @@ struct ListingPreparationCard: View {
         }
     }
 
-    private func prepareDraftIfNeeded() {
-        guard draftBody.isEmpty else { return }
+    private func restoreDraft() {
+        if let saved = ListingDraftStore.load(draftID) {
+            checkedPhotos = Set(saved.checkedPhotos)
+            let hasMain = ListingDraftStore.photo(id: draftID, index: 0) != nil
+            let firstExtraIndex = hasMain ? 1 : 0
+            extraPhotos = (0..<min(saved.extraPhotoCount, 9)).compactMap {
+                ListingDraftStore.photo(id: draftID, index: firstExtraIndex + $0)
+            }
+            draftBody = saved.body.isEmpty ? defaultDraftBody : saved.body
+        } else {
+            draftBody = defaultDraftBody
+        }
+        persistDraft(savePhotos: true)
+    }
 
-        draftBody = [
+    private var defaultDraftBody: String {
+        [
             "ブランド：\(brand)",
             "型番：\(modelNumber)",
             "状態：",
             "動作確認：",
             "付属品：",
             "追記表示："
-        ]
-        .joined(separator: "\n")
+        ].joined(separator: "\n")
+    }
+
+    private func persistDraft(savePhotos: Bool = false) {
+        ListingDraftStore.update(
+            id: draftID, productName: productName, barcode: barcode,
+            brand: brand, modelNumber: modelNumber
+        ) { draft in
+            draft.body = draftBody
+            draft.checkedPhotos = photoChecks.filter { checkedPhotos.contains($0) }
+            draft.extraPhotoCount = extraPhotos.count
+        }
+        if savePhotos {
+            ListingDraftStore.savePhotos(id: draftID, main: image, extras: extraPhotos)
+        }
     }
 
     @MainActor
