@@ -3209,9 +3209,14 @@ final class NearbyBuybackStoreLocator:
             "バッグ専門"
         ]
 
+        // 商品名を付けると、近くの店舗が検索結果から漏れることがある。
+        // まず店舗名を近距離で探し、広域の結果も合わせて距離順に並べる。
         let searchQueries =
-            preferredChains.map {
-                "\($0) \(pendingSearchTerm)"
+            preferredChains.flatMap { chain in
+                [
+                    (chain, 3000.0),
+                    (chain, 12000.0)
+                ]
             }
 
         let searchRadius:
@@ -3226,7 +3231,7 @@ final class NearbyBuybackStoreLocator:
         var collected:
             [MKMapItem] = []
 
-        for query in searchQueries {
+        for (query, radius) in searchQueries {
             group.enter()
 
             let request =
@@ -3240,9 +3245,9 @@ final class NearbyBuybackStoreLocator:
                     center:
                         location.coordinate,
                     latitudinalMeters:
-                        searchRadius * 2,
+                        radius * 2,
                     longitudinalMeters:
-                        searchRadius * 2
+                        radius * 2
                 )
 
             MKLocalSearch(
@@ -3343,14 +3348,6 @@ final class NearbyBuybackStoreLocator:
                         return nil
                     }
 
-                    // ホームページのない店舗は一切表示しない。
-                    guard
-                        let websiteURL =
-                            item.url
-                    else {
-                        return nil
-                    }
-
                     let address =
                         [
                             item.placemark
@@ -3364,6 +3361,28 @@ final class NearbyBuybackStoreLocator:
                         ]
                         .compactMap { $0 }
                         .joined()
+
+                    // Apple マップに URL がない駅前店は、確認済みの公式店舗ページを使う。
+                    // 住所でも照合し、同名の別店舗に適用しない。
+                    let isHachiojiStationBookoff =
+                        (upperName.contains("BOOKOFF")
+                            || name.contains("ブックオフ"))
+                        && name.contains("八王子駅北口店")
+                        && address.contains("旭町")
+
+                    let officialStationURL =
+                        isHachiojiStationBookoff
+                        ? URL(
+                            string:
+                                "https://www.bookoff.co.jp/shop/shop20130.html"
+                        )
+                        : nil
+
+                    // 公式ページも地図の URL もない店舗は表示しない。
+                    guard let websiteURL =
+                        officialStationURL ?? item.url else {
+                        return nil
+                    }
 
                     let key =
                         "\(name)|\(address)"
