@@ -4571,7 +4571,7 @@ struct ListingPreparationCard: View {
     @State private var statusMessage = ""
     @State private var checkedPhotos: Set<String> = []
 
-    private let photoChecks = ["正面", "裏面", "型番", "傷・汚れ", "付属品"]
+    private let photoChecks = ["正面", "裏面", "側面", "型番", "傷・汚れ", "付属品"]
 
     private let green = Color(
         red: 39 / 255,
@@ -4707,6 +4707,13 @@ struct ListingPreparationCard: View {
                 .font(.caption.bold())
                 .foregroundStyle(green)
 
+            Text(productName.isEmpty ? "商品名がありません" : productName)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(green.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
             Button {
                 UIPasteboard.general.string = productName
                 statusMessage = "商品名をコピーしました"
@@ -4762,31 +4769,7 @@ struct ListingPreparationCard: View {
 
             Divider()
 
-            Text("③ 販売価格と送料を決める")
-                .font(.caption.bold())
-                .foregroundStyle(green)
-
-            Text("相場を見ながら金額を入力してください。予想手取りは各サイトの手数料を仮に10％として計算した目安です。出品前に実際の手数料を確認してください。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            ForEach(marketplaces, id: \.name) { market in
-                MarketplaceCard(
-                    market: market,
-                    salePrice: Binding(
-                        get: { salePrices[market.name] ?? "" },
-                        set: { salePrices[market.name] = $0 }
-                    ),
-                    shippingCost: Binding(
-                        get: { shippingCosts[market.name] ?? "" },
-                        set: { shippingCosts[market.name] = $0 }
-                    ),
-                    isBest: bestMarketName == market.name,
-                    onSearch: { onSearch(market) }
-                )
-            }
-
-            Text("④ 出品先を開く")
+            Text("③ 出品先を開く")
                 .font(.caption.bold())
                 .foregroundStyle(green)
 
