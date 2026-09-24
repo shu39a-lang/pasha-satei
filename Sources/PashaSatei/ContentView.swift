@@ -104,7 +104,7 @@ struct ListingTextDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWith: Data(text.utf8))
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
 
