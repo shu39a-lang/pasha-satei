@@ -1,8 +1,10 @@
 import SwiftUI
 import PhotosUI
+import Photos
 import UIKit
 import MapKit
 import CoreLocation
+import UniformTypeIdentifiers
 @preconcurrency import Vision
 
 enum AppRoute: Hashable {
@@ -11,39 +13,8 @@ enum AppRoute: Hashable {
         productName: String,
         barcode: String,
         brand: String,
-        modelNumber: String,
-        filters: ListingFilters
+        modelNumber: String
     )
-}
-
-struct ListingFilters: Hashable {
-    var storage = ""
-    var condition = ""
-    var accessories = ""
-
-    var isEmpty: Bool {
-        storage.isEmpty && condition.isEmpty && accessories.isEmpty
-    }
-
-    var summary: String {
-        [storage, condition, accessories]
-            .filter { !$0.isEmpty }
-            .joined(separator: "・")
-    }
-
-    var searchTerms: String {
-        let conditionQuery: String
-        switch condition {
-        case "新品・未使用": conditionQuery = "未使用"
-        case "良好": conditionQuery = "美品"
-        case "使用感あり": conditionQuery = "使用感"
-        default: conditionQuery = condition
-        }
-
-        return [storage, conditionQuery, accessories]
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-    }
 }
 
 struct Marketplace: Identifiable {
@@ -117,6 +88,24 @@ struct YahooPriceResponse: Codable {
 struct LocalRecognitionResult {
     let text: String
     let barcode: String
+}
+
+struct ListingTextDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+    var text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        let data = configuration.file.regularFileContents ?? Data()
+        self.text = String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWith: Data(text.utf8))
+    }
 }
 
 
@@ -209,7 +198,6 @@ struct ContentView: View {
     @State private var brand = ""
     @State private var category = ""
     @State private var modelNumber = ""
-    @State private var listingFilters = ListingFilters()
     @State private var evidence: [String] = []
     @State private var candidates: [String] = []
     @State private var isRecognizing = false
@@ -239,7 +227,6 @@ struct ContentView: View {
                         brand: $brand,
                         category: $category,
                         modelNumber: $modelNumber,
-                        listingFilters: $listingFilters,
                         evidence: $evidence,
                         candidates: $candidates,
                         isRecognizing: $isRecognizing,
@@ -260,8 +247,7 @@ struct ContentView: View {
                                     productName: selectedName,
                                     barcode: detectedBarcode,
                                     brand: brand,
-                                    modelNumber: modelNumber,
-                                    filters: listingFilters
+                                    modelNumber: modelNumber
                                 )
                             )
                         }
@@ -271,15 +257,14 @@ struct ContentView: View {
                     selectedProductName,
                     selectedBarcode,
                     selectedBrand,
-                    selectedModelNumber,
-                    selectedFilters
+                    selectedModelNumber
                 ):
                     CompareView(
+                        image: selectedImage,
                         productName: selectedProductName,
                         barcode: selectedBarcode,
                         brand: selectedBrand,
-                        modelNumber: selectedModelNumber,
-                        filters: selectedFilters
+                        modelNumber: selectedModelNumber
                     )
                 }
             }
@@ -335,7 +320,6 @@ struct ContentView: View {
         brand = ""
         category = ""
         modelNumber = ""
-        listingFilters = ListingFilters()
         evidence = []
         candidates = []
 
@@ -1981,7 +1965,7 @@ qgj8ML0FBBIxGdqCMXLYwTQOr83WgZhscUFds70EZJooCD3oA5jRRKaCeI5ODRDyAUIiRuVt6KlOGXrR
                     cornerRadius: 24
                 )
                 .stroke(
-                    green.opacity(0.48),
+                    green.opacity(0.20),
                     lineWidth: 1
                 )
             )
@@ -2023,16 +2007,16 @@ qgj8ML0FBBIxGdqCMXLYwTQOr83WgZhscUFds70EZJooCD3oA5jRRKaCeI5ODRDyAUIiRuVt6KlOGXrR
                     .system(
                         size:
                             compact
-                            ? 52
-                            : 60,
-                        weight: .bold
+                            ? 42
+                            : 48,
+                        weight: .regular
                     )
                 )
-                .foregroundStyle(green)
+                .foregroundStyle(green.opacity(0.30))
                 .shadow(
                     color:
-                        green.opacity(0.55),
-                    radius: 10
+                        green.opacity(0.08),
+                    radius: 4
                 )
             }
 
@@ -2465,7 +2449,6 @@ struct ResultView: View {
     @Binding var brand: String
     @Binding var category: String
     @Binding var modelNumber: String
-    @Binding var listingFilters: ListingFilters
     @Binding var evidence: [String]
     @Binding var candidates: [String]
     @Binding var isRecognizing: Bool
@@ -2588,45 +2571,6 @@ struct ResultView: View {
                             cornerRadius: 18
                         )
                     )
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("商品の条件を確認")
-                            .font(.headline)
-
-                        Text("わかる項目だけ選んでください。選択した条件が確認できる出品を比較します。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Picker("容量", selection: $listingFilters.storage) {
-                            Text("指定なし").tag("")
-                            ForEach(
-                                ["16GB", "32GB", "64GB", "128GB", "256GB", "512GB", "1TB"],
-                                id: \.self
-                            ) { value in
-                                Text(value).tag(value)
-                            }
-                        }
-
-                        Picker("状態", selection: $listingFilters.condition) {
-                            Text("指定なし").tag("")
-                            ForEach(
-                                ["新品・未使用", "良好", "使用感あり", "ジャンク"],
-                                id: \.self
-                            ) { value in
-                                Text(value).tag(value)
-                            }
-                        }
-
-                        Picker("付属品", selection: $listingFilters.accessories) {
-                            Text("指定なし").tag("")
-                            Text("付属品あり").tag("付属品あり")
-                            Text("本体のみ").tag("本体のみ")
-                        }
-                    }
-                    .tint(green)
-                    .padding(16)
-                    .background(Color(red: 24 / 255, green: 24 / 255, blue: 26 / 255))
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
 
                     InfoCard(
                         title: "認識方法",
@@ -3038,11 +2982,11 @@ struct InfoCard: View {
 }
 
 struct CompareView: View {
+    let image: UIImage?
     let productName: String
     let barcode: String
     let brand: String
     let modelNumber: String
-    let filters: ListingFilters
 
     @State private var salePrices: [String: String] = [:]
     @State private var shippingCosts: [String: String] = [:]
@@ -3091,16 +3035,6 @@ struct CompareView: View {
                             : productName
                         )
                         .font(.title2.bold())
-
-                        if !filters.isEmpty {
-                            Text("比較条件：\(filters.summary)")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(green)
-
-                            Text("条件が出品情報で確認できない商品は集計しません。0件の場合は条件を減らして再検索してください。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
 
                         if !barcode.isEmpty {
                             Text("JAN / EAN: \(barcode)")
@@ -3164,6 +3098,14 @@ struct CompareView: View {
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                        ListingPreparationCard(
+                            image: image,
+                            productName: productName,
+                            brand: brand,
+                            modelNumber: modelNumber,
+                            barcode: barcode
+                        )
 
                         HStack(spacing: 10) {
                             SellSiteButton(
@@ -3380,140 +3322,7 @@ struct CompareView: View {
 
         add(simplified)
 
-        let baseCandidates = Array(values.prefix(4))
-
-        guard !filters.isEmpty else {
-            return baseCandidates
-        }
-
-        var filteredCandidates: [String] = []
-
-        for base in baseCandidates.prefix(2) {
-            // AIの商品名に別の容量や状態が含まれる場合、選択した条件を優先。
-            var cleanBase = base
-            if !filters.storage.isEmpty {
-                cleanBase = cleanBase.replacingOccurrences(
-                    of: #"(?i)(?<![0-9])(?:16|32|64|128|256|512)\s?GB|[12]\s?TB"#,
-                    with: "",
-                    options: .regularExpression
-                )
-            }
-
-            if !filters.condition.isEmpty {
-                for word in ["新品", "未使用", "美品", "ジャンク", "使用感"] {
-                    cleanBase = cleanBase.replacingOccurrences(
-                        of: word,
-                        with: "",
-                        options: .caseInsensitive
-                    )
-                }
-            }
-
-            if !filters.accessories.isEmpty {
-                for word in ["本体のみ", "付属品あり", "付属品付き"] {
-                    cleanBase = cleanBase.replacingOccurrences(
-                        of: word,
-                        with: ""
-                    )
-                }
-            }
-
-            let query = "\(cleanBase) \(filters.searchTerms)"
-                .split(whereSeparator: { $0.isWhitespace })
-                .joined(separator: " ")
-
-            if !query.isEmpty && !filteredCandidates.contains(query) {
-                filteredCandidates.append(query)
-            }
-        }
-
-        for base in baseCandidates where !filteredCandidates.contains(base) {
-            filteredCandidates.append(base)
-        }
-
-        return Array(filteredCandidates.prefix(4))
-    }
-
-    private func filteredResponse(
-        _ response: YahooPriceResponse
-    ) -> YahooPriceResponse {
-        guard !filters.isEmpty else {
-            return response
-        }
-
-        let matching = response.items.filter { item in
-            let description = "\(item.name) \(item.condition ?? "")"
-
-            if !filters.storage.isEmpty {
-                let pattern = #"(?i)(?<![0-9])(?:16|32|64|128|256|512)\s?GB|[12]\s?TB"#
-                guard let range = description.range(
-                    of: pattern,
-                    options: .regularExpression
-                ) else {
-                    return false
-                }
-
-                let capacity = String(description[range])
-                    .replacingOccurrences(of: " ", with: "")
-                    .uppercased()
-
-                guard capacity == filters.storage else {
-                    return false
-                }
-            }
-
-            if !filters.condition.isEmpty {
-                let conditionWords: [String]
-                switch filters.condition {
-                case "新品・未使用":
-                    if description.contains("未使用に近い") {
-                        return false
-                    }
-                    conditionWords = ["新品", "未使用"]
-                case "良好":
-                    conditionWords = ["美品", "良好", "非常に良い", "目立った傷や汚れなし"]
-                case "使用感あり":
-                    conditionWords = ["使用感あり", "使用感有", "傷や汚れあり", "傷あり", "汚れあり"]
-                case "ジャンク":
-                    conditionWords = ["ジャンク", "故障", "動作未確認"]
-                default:
-                    conditionWords = []
-                }
-
-                guard conditionWords.contains(where: { description.contains($0) }) else {
-                    return false
-                }
-            }
-
-            if !filters.accessories.isEmpty {
-                let accessoryWords = filters.accessories == "本体のみ"
-                    ? ["本体のみ", "付属品なし"]
-                    : ["付属品あり", "付属品付き", "付属品完備", "充電器付き", "完品"]
-
-                guard accessoryWords.contains(where: { description.contains($0) }) else {
-                    return false
-                }
-            }
-
-            return true
-        }
-
-        let prices = matching.map(\.price).sorted()
-        let middle = prices.isEmpty
-            ? 0
-            : (prices[(prices.count - 1) / 2] + prices[prices.count / 2]) / 2
-
-        return YahooPriceResponse(
-            ok: response.ok,
-            source: response.source,
-            query: response.query,
-            count: matching.count,
-            minPrice: prices.first ?? 0,
-            medianPrice: middle,
-            maxPrice: prices.last ?? 0,
-            items: matching,
-            error: response.error
-        )
+        return Array(values.prefix(4))
     }
 
     @MainActor
@@ -3538,7 +3347,6 @@ struct CompareView: View {
 
             if let result,
                result.ok {
-                let result = filteredResponse(result)
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
@@ -3566,11 +3374,9 @@ struct CompareView: View {
                     )
 
                 if let retry,
-                   retry.ok {
-                    let retry = filteredResponse(retry)
-                    if retry.count > (bestResult?.count ?? 0) {
-                        bestResult = retry
-                    }
+                   retry.ok,
+                   retry.count > (bestResult?.count ?? 0) {
+                    bestResult = retry
                 }
             }
         }
@@ -3626,7 +3432,6 @@ struct CompareView: View {
 
             if let result,
                result.ok {
-                let result = filteredResponse(result)
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
@@ -3654,11 +3459,9 @@ struct CompareView: View {
                 )
 
             if let retry,
-               retry.ok {
-                let retry = filteredResponse(retry)
-                if retry.count > (bestResult?.count ?? 0) {
-                    bestResult = retry
-                }
+               retry.ok,
+               retry.count > (bestResult?.count ?? 0) {
+                bestResult = retry
             }
         }
 
@@ -3714,7 +3517,7 @@ struct CompareView: View {
                 for await result in group {
                     if let result,
                        result.ok {
-                        collected.append(filteredResponse(result))
+                        collected.append(result)
                     }
                 }
 
@@ -3744,7 +3547,7 @@ struct CompareView: View {
 
                 if let retry,
                    retry.ok {
-                    bestResult = filteredResponse(retry)
+                    bestResult = retry
                 }
             }
         }
@@ -4615,6 +4418,241 @@ struct NearbyStoreActionStyle:
                     cornerRadius: 10
                 )
             )
+    }
+}
+
+struct ListingPreparationCard: View {
+    let image: UIImage?
+    let productName: String
+    let brand: String
+    let modelNumber: String
+    let barcode: String
+
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var extraPhotos: [UIImage] = []
+    @State private var showCamera = false
+    @State private var showTextExporter = false
+    @State private var draftTitle = ""
+    @State private var draftBody = ""
+    @State private var statusMessage = ""
+
+    private let green = Color(
+        red: 39 / 255,
+        green: 211 / 255,
+        blue: 119 / 255
+    )
+
+    private var allPhotos: [UIImage] {
+        (image.map { [$0] } ?? []) + extraPhotos
+    }
+
+    private var fullDraft: String {
+        "\(draftTitle)\n\n\(draftBody)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("出品用の写真と文章")
+                .font(.subheadline.bold())
+
+            Text("査定写真に追加の写真を添え、出品前に内容を確認できます。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                PhotosPicker(
+                    selection: $selectedPhotos,
+                    maxSelectionCount: 10,
+                    matching: .images
+                ) {
+                    Label("写真を追加", systemImage: "photo.on.rectangle")
+                }
+
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("撮影して追加", systemImage: "camera")
+                }
+                .disabled(extraPhotos.count >= 9)
+            }
+            .font(.caption.bold())
+            .foregroundStyle(green)
+
+            if !allPhotos.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        if let image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 66, height: 76)
+                                .clipped()
+                                .accessibilityLabel("査定に使用した写真")
+                        }
+
+                        ForEach(extraPhotos.indices, id: \.self) { index in
+                            Image(uiImage: extraPhotos[index])
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 66, height: 76)
+                                .clipped()
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        extraPhotos.remove(at: index)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.white)
+                                    }
+                                    .accessibilityLabel("追加した写真を削除")
+                                }
+                        }
+                    }
+                }
+
+                Button {
+                    Task { await savePhotosToLibrary() }
+                } label: {
+                    Label("写真アプリに保存（\(allPhotos.count)枚）", systemImage: "square.and.arrow.down")
+                }
+                .font(.caption.bold())
+                .foregroundStyle(green)
+            }
+
+            TextField("出品タイトル", text: $draftTitle)
+                .textFieldStyle(.roundedBorder)
+
+            TextEditor(text: $draftBody)
+                .frame(height: 160)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            HStack(spacing: 16) {
+                Button {
+                    UIPasteboard.general.string = draftTitle
+                    statusMessage = "商品名をコピーしました"
+                } label: {
+                    Label("商品名をコピー", systemImage: "doc.on.doc")
+                }
+
+                Button {
+                    UIPasteboard.general.string = draftBody
+                    statusMessage = "説明文をコピーしました"
+                } label: {
+                    Label("説明文をコピー", systemImage: "doc.on.doc")
+                }
+            }
+            .font(.caption.bold())
+            .foregroundStyle(green)
+
+            Button {
+                showTextExporter = true
+            } label: {
+                Label("商品名と説明文をテキスト保存", systemImage: "doc.badge.arrow.up")
+            }
+            .font(.caption.bold())
+            .foregroundStyle(green)
+
+            if !statusMessage.isEmpty {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(green)
+            }
+
+            Text("メルカリのAI出品サポートが表示される場合は、出品画面でオンにし、保存した写真を選べます。文章は必要に応じて貼り付けてください。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear(perform: prepareDraftIfNeeded)
+        .onChange(of: selectedPhotos) { items in
+            guard !items.isEmpty else { return }
+            Task { @MainActor in
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       extraPhotos.count < 9 {
+                        extraPhotos.append(image)
+                    }
+                }
+                selectedPhotos = []
+            }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker(
+                onImage: { photo in
+                    extraPhotos.append(photo)
+                    showCamera = false
+                },
+                onCancel: { showCamera = false }
+            )
+            .ignoresSafeArea()
+        }
+        .fileExporter(
+            isPresented: $showTextExporter,
+            document: ListingTextDocument(text: fullDraft),
+            contentType: .plainText,
+            defaultFilename: "パシャ査定_出品文"
+        ) { result in
+            switch result {
+            case .success:
+                statusMessage = "文章をファイルに保存しました"
+            case .failure:
+                statusMessage = "文章を保存できませんでした"
+            }
+        }
+    }
+
+    private func prepareDraftIfNeeded() {
+        guard draftTitle.isEmpty else { return }
+
+        draftTitle = productName
+        if !modelNumber.isEmpty && !draftTitle.contains(modelNumber) {
+            draftTitle += " \(modelNumber)"
+        }
+
+        draftBody = [
+            "商品名：\(productName)",
+            brand.isEmpty ? nil : "ブランド：\(brand)",
+            modelNumber.isEmpty ? nil : "型番：\(modelNumber)",
+            barcode.isEmpty ? nil : "JAN / EAN：\(barcode)",
+            "状態：実物を確認して記入してください",
+            "動作確認：確認して記入してください",
+            "付属品：実際にお渡しするものを記入してください",
+            "傷・汚れ：実物を確認して記入してください"
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n")
+    }
+
+    @MainActor
+    private func savePhotosToLibrary() async {
+        let photos = allPhotos
+        guard !photos.isEmpty else { return }
+
+        guard Bundle.main.object(
+            forInfoDictionaryKey: "NSPhotoLibraryAddUsageDescription"
+        ) != nil else {
+            statusMessage = "写真の保存設定がありません。アプリの設定を確認してください。"
+            return
+        }
+
+        let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard permission == .authorized || permission == .limited else {
+            statusMessage = "写真への保存を許可してください"
+            return
+        }
+
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                for photo in photos {
+                    PHAssetChangeRequest.creationRequestForAsset(from: photo)
+                }
+            }
+            statusMessage = "\(photos.count)枚を写真アプリに保存しました"
+        } catch {
+            statusMessage = "写真を保存できませんでした"
+        }
     }
 }
 
