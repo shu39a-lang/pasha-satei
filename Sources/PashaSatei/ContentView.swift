@@ -11,8 +11,39 @@ enum AppRoute: Hashable {
         productName: String,
         barcode: String,
         brand: String,
-        modelNumber: String
+        modelNumber: String,
+        filters: ListingFilters
     )
+}
+
+struct ListingFilters: Hashable {
+    var storage = ""
+    var condition = ""
+    var accessories = ""
+
+    var isEmpty: Bool {
+        storage.isEmpty && condition.isEmpty && accessories.isEmpty
+    }
+
+    var summary: String {
+        [storage, condition, accessories]
+            .filter { !$0.isEmpty }
+            .joined(separator: "・")
+    }
+
+    var searchTerms: String {
+        let conditionQuery: String
+        switch condition {
+        case "新品・未使用": conditionQuery = "未使用"
+        case "良好": conditionQuery = "美品"
+        case "使用感あり": conditionQuery = "使用感"
+        default: conditionQuery = condition
+        }
+
+        return [storage, conditionQuery, accessories]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
 }
 
 struct Marketplace: Identifiable {
@@ -178,6 +209,7 @@ struct ContentView: View {
     @State private var brand = ""
     @State private var category = ""
     @State private var modelNumber = ""
+    @State private var listingFilters = ListingFilters()
     @State private var evidence: [String] = []
     @State private var candidates: [String] = []
     @State private var isRecognizing = false
@@ -207,6 +239,7 @@ struct ContentView: View {
                         brand: $brand,
                         category: $category,
                         modelNumber: $modelNumber,
+                        listingFilters: $listingFilters,
                         evidence: $evidence,
                         candidates: $candidates,
                         isRecognizing: $isRecognizing,
@@ -227,7 +260,8 @@ struct ContentView: View {
                                     productName: selectedName,
                                     barcode: detectedBarcode,
                                     brand: brand,
-                                    modelNumber: modelNumber
+                                    modelNumber: modelNumber,
+                                    filters: listingFilters
                                 )
                             )
                         }
@@ -237,13 +271,15 @@ struct ContentView: View {
                     selectedProductName,
                     selectedBarcode,
                     selectedBrand,
-                    selectedModelNumber
+                    selectedModelNumber,
+                    selectedFilters
                 ):
                     CompareView(
                         productName: selectedProductName,
                         barcode: selectedBarcode,
                         brand: selectedBrand,
-                        modelNumber: selectedModelNumber
+                        modelNumber: selectedModelNumber,
+                        filters: selectedFilters
                     )
                 }
             }
@@ -299,6 +335,7 @@ struct ContentView: View {
         brand = ""
         category = ""
         modelNumber = ""
+        listingFilters = ListingFilters()
         evidence = []
         candidates = []
 
@@ -2428,6 +2465,7 @@ struct ResultView: View {
     @Binding var brand: String
     @Binding var category: String
     @Binding var modelNumber: String
+    @Binding var listingFilters: ListingFilters
     @Binding var evidence: [String]
     @Binding var candidates: [String]
     @Binding var isRecognizing: Bool
@@ -2550,6 +2588,45 @@ struct ResultView: View {
                             cornerRadius: 18
                         )
                     )
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("商品の条件を確認")
+                            .font(.headline)
+
+                        Text("わかる項目だけ選んでください。選択した条件が確認できる出品を比較します。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Picker("容量", selection: $listingFilters.storage) {
+                            Text("指定なし").tag("")
+                            ForEach(
+                                ["16GB", "32GB", "64GB", "128GB", "256GB", "512GB", "1TB"],
+                                id: \.self
+                            ) { value in
+                                Text(value).tag(value)
+                            }
+                        }
+
+                        Picker("状態", selection: $listingFilters.condition) {
+                            Text("指定なし").tag("")
+                            ForEach(
+                                ["新品・未使用", "良好", "使用感あり", "ジャンク"],
+                                id: \.self
+                            ) { value in
+                                Text(value).tag(value)
+                            }
+                        }
+
+                        Picker("付属品", selection: $listingFilters.accessories) {
+                            Text("指定なし").tag("")
+                            Text("付属品あり").tag("付属品あり")
+                            Text("本体のみ").tag("本体のみ")
+                        }
+                    }
+                    .tint(green)
+                    .padding(16)
+                    .background(Color(red: 24 / 255, green: 24 / 255, blue: 26 / 255))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
 
                     InfoCard(
                         title: "認識方法",
@@ -2965,6 +3042,7 @@ struct CompareView: View {
     let barcode: String
     let brand: String
     let modelNumber: String
+    let filters: ListingFilters
 
     @State private var salePrices: [String: String] = [:]
     @State private var shippingCosts: [String: String] = [:]
@@ -3013,6 +3091,16 @@ struct CompareView: View {
                             : productName
                         )
                         .font(.title2.bold())
+
+                        if !filters.isEmpty {
+                            Text("比較条件：\(filters.summary)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(green)
+
+                            Text("条件が出品情報で確認できない商品は集計しません。0件の場合は条件を減らして再検索してください。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
                         if !barcode.isEmpty {
                             Text("JAN / EAN: \(barcode)")
@@ -3292,7 +3380,140 @@ struct CompareView: View {
 
         add(simplified)
 
-        return Array(values.prefix(4))
+        let baseCandidates = Array(values.prefix(4))
+
+        guard !filters.isEmpty else {
+            return baseCandidates
+        }
+
+        var filteredCandidates: [String] = []
+
+        for base in baseCandidates.prefix(2) {
+            // AIの商品名に別の容量や状態が含まれる場合、選択した条件を優先。
+            var cleanBase = base
+            if !filters.storage.isEmpty {
+                cleanBase = cleanBase.replacingOccurrences(
+                    of: #"(?i)(?<![0-9])(?:16|32|64|128|256|512)\s?GB|[12]\s?TB"#,
+                    with: "",
+                    options: .regularExpression
+                )
+            }
+
+            if !filters.condition.isEmpty {
+                for word in ["新品", "未使用", "美品", "ジャンク", "使用感"] {
+                    cleanBase = cleanBase.replacingOccurrences(
+                        of: word,
+                        with: "",
+                        options: .caseInsensitive
+                    )
+                }
+            }
+
+            if !filters.accessories.isEmpty {
+                for word in ["本体のみ", "付属品あり", "付属品付き"] {
+                    cleanBase = cleanBase.replacingOccurrences(
+                        of: word,
+                        with: ""
+                    )
+                }
+            }
+
+            let query = "\(cleanBase) \(filters.searchTerms)"
+                .split(whereSeparator: { $0.isWhitespace })
+                .joined(separator: " ")
+
+            if !query.isEmpty && !filteredCandidates.contains(query) {
+                filteredCandidates.append(query)
+            }
+        }
+
+        for base in baseCandidates where !filteredCandidates.contains(base) {
+            filteredCandidates.append(base)
+        }
+
+        return Array(filteredCandidates.prefix(4))
+    }
+
+    private func filteredResponse(
+        _ response: YahooPriceResponse
+    ) -> YahooPriceResponse {
+        guard !filters.isEmpty else {
+            return response
+        }
+
+        let matching = response.items.filter { item in
+            let description = "\(item.name) \(item.condition ?? "")"
+
+            if !filters.storage.isEmpty {
+                let pattern = #"(?i)(?<![0-9])(?:16|32|64|128|256|512)\s?GB|[12]\s?TB"#
+                guard let range = description.range(
+                    of: pattern,
+                    options: .regularExpression
+                ) else {
+                    return false
+                }
+
+                let capacity = String(description[range])
+                    .replacingOccurrences(of: " ", with: "")
+                    .uppercased()
+
+                guard capacity == filters.storage else {
+                    return false
+                }
+            }
+
+            if !filters.condition.isEmpty {
+                let conditionWords: [String]
+                switch filters.condition {
+                case "新品・未使用":
+                    if description.contains("未使用に近い") {
+                        return false
+                    }
+                    conditionWords = ["新品", "未使用"]
+                case "良好":
+                    conditionWords = ["美品", "良好", "非常に良い", "目立った傷や汚れなし"]
+                case "使用感あり":
+                    conditionWords = ["使用感あり", "使用感有", "傷や汚れあり", "傷あり", "汚れあり"]
+                case "ジャンク":
+                    conditionWords = ["ジャンク", "故障", "動作未確認"]
+                default:
+                    conditionWords = []
+                }
+
+                guard conditionWords.contains(where: { description.contains($0) }) else {
+                    return false
+                }
+            }
+
+            if !filters.accessories.isEmpty {
+                let accessoryWords = filters.accessories == "本体のみ"
+                    ? ["本体のみ", "付属品なし"]
+                    : ["付属品あり", "付属品付き", "付属品完備", "充電器付き", "完品"]
+
+                guard accessoryWords.contains(where: { description.contains($0) }) else {
+                    return false
+                }
+            }
+
+            return true
+        }
+
+        let prices = matching.map(\.price).sorted()
+        let middle = prices.isEmpty
+            ? 0
+            : (prices[(prices.count - 1) / 2] + prices[prices.count / 2]) / 2
+
+        return YahooPriceResponse(
+            ok: response.ok,
+            source: response.source,
+            query: response.query,
+            count: matching.count,
+            minPrice: prices.first ?? 0,
+            medianPrice: middle,
+            maxPrice: prices.last ?? 0,
+            items: matching,
+            error: response.error
+        )
     }
 
     @MainActor
@@ -3317,6 +3538,7 @@ struct CompareView: View {
 
             if let result,
                result.ok {
+                let result = filteredResponse(result)
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
@@ -3344,9 +3566,11 @@ struct CompareView: View {
                     )
 
                 if let retry,
-                   retry.ok,
-                   retry.count > (bestResult?.count ?? 0) {
-                    bestResult = retry
+                   retry.ok {
+                    let retry = filteredResponse(retry)
+                    if retry.count > (bestResult?.count ?? 0) {
+                        bestResult = retry
+                    }
                 }
             }
         }
@@ -3402,6 +3626,7 @@ struct CompareView: View {
 
             if let result,
                result.ok {
+                let result = filteredResponse(result)
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
@@ -3429,9 +3654,11 @@ struct CompareView: View {
                 )
 
             if let retry,
-               retry.ok,
-               retry.count > (bestResult?.count ?? 0) {
-                bestResult = retry
+               retry.ok {
+                let retry = filteredResponse(retry)
+                if retry.count > (bestResult?.count ?? 0) {
+                    bestResult = retry
+                }
             }
         }
 
@@ -3487,7 +3714,7 @@ struct CompareView: View {
                 for await result in group {
                     if let result,
                        result.ok {
-                        collected.append(result)
+                        collected.append(filteredResponse(result))
                     }
                 }
 
@@ -3517,7 +3744,7 @@ struct CompareView: View {
 
                 if let retry,
                    retry.ok {
-                    bestResult = retry
+                    bestResult = filteredResponse(retry)
                 }
             }
         }
