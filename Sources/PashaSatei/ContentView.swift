@@ -280,8 +280,6 @@ struct ContentView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
-    @State private var buyerSelectedPhoto: PhotosPickerItem?
-    @State private var buyerShowCamera = false
     @State private var buyerImage: UIImage?
     @State private var buyerProductName = ""
     @State private var buyerBarcode = ""
@@ -305,8 +303,6 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
-                buyerSelectedPhoto: $buyerSelectedPhoto,
-                buyerShowCamera: $buyerShowCamera,
                 onOpenBuyer: { path.append(.buyer) },
                 hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
@@ -416,28 +412,6 @@ struct ContentView: View {
     )
     .ignoresSafeArea()
 }
-        .fullScreenCover(isPresented: $buyerShowCamera) {
-            CameraPicker(
-                onImage: { photo in
-                    buyerShowCamera = false
-                    Task { @MainActor in
-                        await Task.yield()
-                        startBuyerRecognition(photo)
-                    }
-                },
-                onCancel: { buyerShowCamera = false }
-            )
-            .ignoresSafeArea()
-        }
-        .onChange(of: buyerSelectedPhoto) { newItem in
-            Task {
-                guard let newItem,
-                      let data = try? await newItem.loadTransferable(type: Data.self),
-                      let photo = UIImage(data: data) else { return }
-                buyerSelectedPhoto = nil
-                startBuyerRecognition(photo)
-            }
-        }
         .onChange(of: selectedPhoto) { newItem in
             Task {
                 guard let newItem,
@@ -610,8 +584,6 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
-    @Binding var buyerSelectedPhoto: PhotosPickerItem?
-    @Binding var buyerShowCamera: Bool
     let onOpenBuyer: () -> Void
 
     @State private var showUsageGuide = false
@@ -627,8 +599,6 @@ struct HomeView: View {
                 HomeScreenContent(
                     selectedPhoto: $selectedPhoto,
                     showCamera: $showCamera,
-                    buyerSelectedPhoto: $buyerSelectedPhoto,
-                    buyerShowCamera: $buyerShowCamera,
                     onOpenBuyer: onOpenBuyer,
                     showUsageGuide: $showUsageGuide,
                     hasPreviousResult: hasPreviousResult,
@@ -650,8 +620,6 @@ struct HomeView: View {
 struct HomeScreenContent: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
-    @Binding var buyerSelectedPhoto: PhotosPickerItem?
-    @Binding var buyerShowCamera: Bool
     let onOpenBuyer: () -> Void
     @Binding var showUsageGuide: Bool
 
@@ -676,11 +644,7 @@ struct HomeScreenContent: View {
                     }
                 }
 
-                BuyerEntryPanel(
-                    selectedPhoto: $buyerSelectedPhoto,
-                    showCamera: $buyerShowCamera,
-                    onOpenBuyer: onOpenBuyer
-                )
+                BuyerEntryPanel(onOpenBuyer: onOpenBuyer)
 
                 HomeGuideButton(compact: compact) {
                     showUsageGuide = true
@@ -699,12 +663,9 @@ struct HomeScreenContent: View {
 }
 
 struct BuyerEntryPanel: View {
-    @Binding var selectedPhoto: PhotosPickerItem?
-    @Binding var showCamera: Bool
     let onOpenBuyer: () -> Void
 
     private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
-    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
 
     var body: some View {
         VStack(spacing: 9) {
@@ -727,19 +688,6 @@ struct BuyerEntryPanel: View {
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 9) {
-                Button { showCamera = true } label: {
-                    Label("写真を撮る", systemImage: "camera.fill")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label("写真を選ぶ", systemImage: "photo.fill")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-            }
-            .font(.subheadline.bold())
-            .foregroundStyle(gold)
-            .padding(.horizontal, 3)
         }
         .padding(10)
         .background(Color(red: 34 / 255, green: 40 / 255, blue: 46 / 255))
@@ -794,41 +742,55 @@ struct BuyerDiscoveryView: View {
         var seenURLs = Set<String>()
         var seenPhotos = Set<String>()
         var seenWithoutPhotos = Set<String>()
+        var seenTitles = Set<String>()
         return candidates.filter { listing in
-            guard seenURLs.insert(listing.url.absoluteString).inserted else { return false }
+            // Ignore tracking parameters when the same listing URL appears twice.
+            let urlKey = (listing.url.scheme?.lowercased() ?? "") + "://" +
+                (listing.url.host?.lowercased() ?? "") + listing.url.path
+            guard seenURLs.insert(urlKey).inserted else { return false }
 
-            // 同じサイトで写真と価格が一致する別URLの再掲載を1件にまとめる。
+            // 同じ写真・価格で別URLの再掲載を1件にまとめる。
             let photo = listing.item.imageUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if let imageURL = URL(string: photo), let host = imageURL.host, !imageURL.path.isEmpty {
                 let key = "\(listing.source)|\(listing.item.price)|\(host.lowercased())|\(imageURL.path)"
-                return seenPhotos.insert(key).inserted
+                guard seenPhotos.insert(key).inserted else { return false }
             }
 
-            // 写真がない場合は、販売者・商品名・価格が揃ったときだけ重複と判断する。
+            // 写真URLが異なっても、同じサイト・商品名・価格なら一覧では一件にする。
+            // 型番などを含む十分長い名前に限定して、短い汎用名は残す。
+            let name = listing.item.name.folding(options: [.widthInsensitive, .caseInsensitive], locale: .current)
+                .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+                .map { String($0) }.joined()
+            if name.count >= 14 {
+                let key = "\(listing.source)|\(listing.item.price)|\(name)"
+                guard seenTitles.insert(key).inserted else { return false }
+            }
+
+            // 写真も十分な商品名もない場合は販売者も照合する。
             let seller = listing.item.seller?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !seller.isEmpty else { return true }
-            let name = listing.item.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let key = "\(listing.source)|\(listing.item.price)|\(seller.lowercased())|\(name)"
             return seenWithoutPhotos.insert(key).inserted
         }
     }
 
     private var listings: [BuyerListing] {
-        Array(uniqueListings.sorted { $0.item.price < $1.item.price }.prefix(20))
+        let sorted = uniqueListings.sorted { $0.item.price < $1.item.price }
+        // 各サイトの最安3件を確保してから、残りを価格順で20件まで埋める。
+        let priority = ["メルカリ", "Yahoo!", "ラクマ"].flatMap { source in
+            Array(sorted.filter { $0.source == source }.prefix(3))
+        }
+        let reserved = Set(priority.map(\.id))
+        let remainder = sorted.filter { !reserved.contains($0.id) }
+        return (priority + Array(remainder.prefix(max(0, 20 - priority.count))))
+            .sorted { $0.item.price < $1.item.price }
     }
 
-    private func sourceStatus(_ response: YahooPriceResponse?) -> String {
+    private func sourceStatus(_ source: String, _ response: YahooPriceResponse?) -> String {
         if let response {
-            return response.ok ? "\(response.items.count)件取得" : "取得失敗"
+            return response.ok ? "\(uniqueListings.filter { $0.source == source }.count)件" : "取得失敗"
         }
         return isLoading ? "取得中" : "取得失敗"
-    }
-
-    private var sourcesOutsideTop20: [String] {
-        ["メルカリ", "Yahoo!", "ラクマ"].filter { source in
-            uniqueListings.contains(where: { $0.source == source }) &&
-            !listings.contains(where: { $0.source == source })
-        }
     }
 
     var body: some View {
@@ -840,7 +802,7 @@ struct BuyerDiscoveryView: View {
                         .font(.caption.bold()).tracking(2).foregroundStyle(gold)
                     Text("買いたい商品の価格を探す")
                         .font(.title2.bold()).foregroundStyle(.white)
-                    Text("3サイトの商品をまとめて、価格の安い順に表示します")
+                    Text("3サイトの価格を比べて、購入候補を探せます")
                         .font(.subheadline).foregroundStyle(silver)
 
                     if let image {
@@ -853,16 +815,21 @@ struct BuyerDiscoveryView: View {
                     HStack(spacing: 9) {
                         Button { showCamera = true } label: {
                             Label("写真を撮る", systemImage: "camera.fill")
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .background(gold, in: RoundedRectangle(cornerRadius: 13))
+                                .foregroundStyle(.black)
                         }
+                        .buttonStyle(.plain)
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("写真を選ぶ", systemImage: "photo.fill")
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                            Label("写真を選ぶ", systemImage: "photo.on.rectangle.angled")
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .background(silver.opacity(0.16), in: RoundedRectangle(cornerRadius: 13))
+                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(silver.opacity(0.6)))
+                                .foregroundStyle(.white)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .font(.subheadline.bold()).foregroundStyle(silver)
-                    .padding(5).background(Color.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .font(.subheadline.bold())
 
                     if isRecognizing {
                         HStack { ProgressView().tint(gold); Text("写真から商品を判定しています…") }
@@ -904,14 +871,10 @@ struct BuyerDiscoveryView: View {
                             Text("\(listings.count)件 / 最大20件")
                                 .font(.caption.bold()).foregroundStyle(gold)
                         }
-                        Text("表示価格順です。送料・状態はリンク先で確認してください。")
+                        Text("各サイトの安い商品を最大3件ずつ含めて価格順に表示。送料・状態はリンク先で確認してください。")
                             .font(.caption).foregroundStyle(silver)
-                        Text("取得結果：メルカリ \(sourceStatus(mercari)) ・ Yahoo! \(sourceStatus(yahoo)) ・ ラクマ \(sourceStatus(rakuma))")
+                        Text("重複除去後：メルカリ \(sourceStatus("メルカリ", mercari)) ・ Yahoo! \(sourceStatus("Yahoo!", yahoo)) ・ ラクマ \(sourceStatus("ラクマ", rakuma))")
                             .font(.caption.bold()).foregroundStyle(silver)
-                        if !sourcesOutsideTop20.isEmpty {
-                            Text("\(sourcesOutsideTop20.joined(separator: "・"))の商品は取得できましたが、安い順の上位20件には入っていません。")
-                                .font(.caption).foregroundStyle(silver)
-                        }
                         if listings.isEmpty {
                             Text("商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
@@ -925,9 +888,23 @@ struct BuyerDiscoveryView: View {
                                     Text("\(index + 1)")
                                         .font(.headline.bold()).foregroundStyle(gold)
                                         .frame(width: 28)
+                                    if let imageURL = listing.item.imageUrl.flatMap({ URL(string: $0) }),
+                                       ["http", "https"].contains(imageURL.scheme?.lowercased() ?? "") {
+                                        AsyncImage(url: imageURL) { photo in
+                                            photo.resizable().scaledToFill()
+                                        } placeholder: {
+                                            Image(systemName: "shippingbox.fill").foregroundStyle(silver)
+                                        }
+                                        .frame(width: 58, height: 58)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(listing.item.name).font(.subheadline.bold())
                                             .foregroundStyle(.white).lineLimit(2)
+                                        if listing.item.name.contains("ジャンク") {
+                                            Text("ジャンク品・動作状態を要確認")
+                                                .font(.caption2.bold()).foregroundStyle(.orange)
+                                        }
                                         if let condition = listing.item.condition, !condition.isEmpty {
                                             Text(condition).font(.caption2).foregroundStyle(silver)
                                         }
