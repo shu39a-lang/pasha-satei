@@ -777,14 +777,13 @@ struct BuyerDiscoveryView: View {
     private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
     private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
 
-    private var listings: [BuyerListing] {
+    private var uniqueListings: [BuyerListing] {
         let sources: [(String, String, Color, YahooPriceResponse?)] = [
             ("メルカリ", "M", Color(red: 235 / 255, green: 91 / 255, blue: 91 / 255), mercari),
             ("Yahoo!", "Y!", Color(red: 242 / 255, green: 91 / 255, blue: 91 / 255), yahoo),
             ("ラクマ", "R", Color(red: 232 / 255, green: 91 / 255, blue: 157 / 255), rakuma)
         ]
-        var seen = Set<String>()
-        return Array(sources.flatMap { sourceInfo in
+        let candidates = sources.flatMap { sourceInfo in
             let (source, mark, color, response) = sourceInfo
             return (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
                 guard item.price > 0, let url = URL(string: item.url),
@@ -792,9 +791,44 @@ struct BuyerDiscoveryView: View {
                 return BuyerListing(source: source, mark: mark, color: color, item: item, url: url)
             }
         }
-        .filter { seen.insert($0.url.absoluteString).inserted }
-        .sorted { $0.item.price < $1.item.price }
-        .prefix(20))
+        var seenURLs = Set<String>()
+        var seenPhotos = Set<String>()
+        var seenWithoutPhotos = Set<String>()
+        return candidates.filter { listing in
+            guard seenURLs.insert(listing.url.absoluteString).inserted else { return false }
+
+            // 同じサイトで写真と価格が一致する別URLの再掲載を1件にまとめる。
+            let photo = listing.item.imageUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if let imageURL = URL(string: photo), let host = imageURL.host, !imageURL.path.isEmpty {
+                let key = "\(listing.source)|\(listing.item.price)|\(host.lowercased())|\(imageURL.path)"
+                return seenPhotos.insert(key).inserted
+            }
+
+            // 写真がない場合は、販売者・商品名・価格が揃ったときだけ重複と判断する。
+            let seller = listing.item.seller?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !seller.isEmpty else { return true }
+            let name = listing.item.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let key = "\(listing.source)|\(listing.item.price)|\(seller.lowercased())|\(name)"
+            return seenWithoutPhotos.insert(key).inserted
+        }
+    }
+
+    private var listings: [BuyerListing] {
+        Array(uniqueListings.sorted { $0.item.price < $1.item.price }.prefix(20))
+    }
+
+    private func sourceStatus(_ response: YahooPriceResponse?) -> String {
+        if let response {
+            return response.ok ? "\(response.items.count)件取得" : "取得失敗"
+        }
+        return isLoading ? "取得中" : "取得失敗"
+    }
+
+    private var sourcesOutsideTop20: [String] {
+        ["メルカリ", "Yahoo!", "ラクマ"].filter { source in
+            uniqueListings.contains(where: { $0.source == source }) &&
+            !listings.contains(where: { $0.source == source })
+        }
     }
 
     var body: some View {
@@ -872,6 +906,12 @@ struct BuyerDiscoveryView: View {
                         }
                         Text("表示価格順です。送料・状態はリンク先で確認してください。")
                             .font(.caption).foregroundStyle(silver)
+                        Text("取得結果：メルカリ \(sourceStatus(mercari)) ・ Yahoo! \(sourceStatus(yahoo)) ・ ラクマ \(sourceStatus(rakuma))")
+                            .font(.caption.bold()).foregroundStyle(silver)
+                        if !sourcesOutsideTop20.isEmpty {
+                            Text("\(sourcesOutsideTop20.joined(separator: "・"))の商品は取得できましたが、安い順の上位20件には入っていません。")
+                                .font(.caption).foregroundStyle(silver)
+                        }
                         if listings.isEmpty {
                             Text("商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
@@ -972,15 +1012,14 @@ struct BuyerDiscoveryView: View {
         rakuma = nil
         async let mercariResult = MercariPriceAPI.fetch(productName: query)
         async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
-        let firstTwo = await (mercariResult, yahooResult)
+        async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
+        let results = await (mercariResult, yahooResult, rakumaResult)
         guard generation == searchGeneration else { return }
-        mercari = firstTwo.0
-        yahoo = firstTwo.1
-        hasSearched = true
-        let rakumaResult = await RakumaPriceAPI.fetch(productName: query)
-        guard generation == searchGeneration else { return }
-        rakuma = rakumaResult
+        mercari = results.0
+        yahoo = results.1
+        rakuma = results.2
         isLoading = false
+        hasSearched = true
     }
 }
 
