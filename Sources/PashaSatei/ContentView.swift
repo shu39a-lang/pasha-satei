@@ -948,6 +948,7 @@ struct HomeCameraButton: View {
                     ? 60
                     : 68
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.black)
@@ -4734,7 +4735,7 @@ struct ListingPreparationCard: View {
                 .font(.caption)
 
             TextEditor(text: $draftBody)
-                .frame(minHeight: 340)
+                .frame(height: 180)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .background(Color.white.opacity(0.07))
@@ -5723,9 +5724,9 @@ enum GeminiProductAPI {
     // A 1600 px long edge preserves logos/model text well enough for Gemini
     // while greatly reducing JPEG/Base64 upload time.
     private static func preparedImage(
-        _ image: UIImage
+        _ image: UIImage,
+        maxEdge: CGFloat = 1600
     ) -> UIImage {
-        let maxEdge: CGFloat = 1600
         let size = image.size
         let longest = max(size.width, size.height)
 
@@ -5814,7 +5815,8 @@ enum GeminiProductAPI {
 
         let focusedImage =
             preparedImage(
-                centerCrop(image)
+                centerCrop(image),
+                maxEdge: 1200
             )
 
         guard let imageData =
@@ -5823,7 +5825,7 @@ enum GeminiProductAPI {
                 ),
               let focusedImageData =
                 focusedImage.jpegData(
-                    compressionQuality: 0.70
+                    compressionQuality: 0.65
                 ) else {
             return nil
         }
@@ -5900,7 +5902,7 @@ enum LocalProductRecognizer {
     ) async -> LocalRecognitionResult {
 
         guard let cgImage =
-                image.cgImage else {
+                resizedForVision(image).cgImage else {
             return LocalRecognitionResult(
                 text: "",
                 barcode: ""
@@ -5917,6 +5919,26 @@ enum LocalProductRecognizer {
             text: textTask,
             barcode: barcodeTask
         )
+    }
+
+    // Vision can spend unnecessary time scanning a full-resolution iPhone
+    // photo. Keep enough pixels for model numbers and JAN/EAN barcodes.
+    private static func resizedForVision(_ image: UIImage) -> UIImage {
+        let maxEdge: CGFloat = 2200
+        let size = image.size
+        let longest = max(size.width, size.height)
+        guard longest > maxEdge, size.width > 0, size.height > 0 else {
+            return image
+        }
+        let ratio = maxEdge / longest
+        let target = CGSize(width: floor(size.width * ratio),
+                            height: floor(size.height * ratio))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 
     private static func recognizeText(
