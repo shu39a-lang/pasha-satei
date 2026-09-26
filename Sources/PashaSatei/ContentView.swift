@@ -3960,7 +3960,7 @@ struct ListingPreparationCard: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(blue)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color(red: 20 / 255, green: 27 / 255, blue: 34 / 255))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .font(.caption.bold())
