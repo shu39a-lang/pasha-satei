@@ -328,7 +328,7 @@ struct ContentView: View {
                 switch route {
                 case .result:
                     ResultView(
-                        image: selectedImage,
+                        image: $selectedImage,
                         productName: $productName,
                         detectedBarcode: $detectedBarcode,
                         recognitionSource: $recognitionSource,
@@ -362,6 +362,7 @@ struct ContentView: View {
                             )
                         }
                     )
+                    .id(draftID)
 
                 case let .compare(
                     selectedProductName,
@@ -371,13 +372,14 @@ struct ContentView: View {
                     selectedDraftID
                 ):
                     CompareView(
-                        image: selectedImage,
+                        image: $selectedImage,
                         productName: selectedProductName,
                         barcode: selectedBarcode,
                         brand: selectedBrand,
                         modelNumber: selectedModelNumber,
                         draftID: selectedDraftID
                     )
+                    .id(selectedDraftID)
                 }
             }
         }
@@ -2562,7 +2564,7 @@ struct StepCard: View {
 }
 
 struct ResultView: View {
-    let image: UIImage?
+    @Binding var image: UIImage?
 
     @Environment(\.openURL)
     private var openURL
@@ -3107,7 +3109,7 @@ struct InfoCard: View {
 }
 
 struct CompareView: View {
-    let image: UIImage?
+    @Binding var image: UIImage?
     let productName: String
     let barcode: String
     let brand: String
@@ -4732,7 +4734,7 @@ struct ListingPreparationCard: View {
                 .font(.caption)
 
             TextEditor(text: $draftBody)
-                .frame(height: 160)
+                .frame(minHeight: 340)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .background(Color.white.opacity(0.07))
@@ -4841,7 +4843,9 @@ struct ListingPreparationCard: View {
             extraPhotos = (0..<min(saved.extraPhotoCount, 9)).compactMap {
                 ListingDraftStore.photo(id: draftID, index: firstExtraIndex + $0)
             }
-            draftBody = saved.body.isEmpty ? defaultDraftBody : saved.body
+            let previousAutomaticBody = automaticDraftBody(model: modelNumber)
+            draftBody = saved.body.isEmpty || saved.body == previousAutomaticBody
+                ? defaultDraftBody : saved.body
         } else {
             draftBody = defaultDraftBody
         }
@@ -4849,9 +4853,26 @@ struct ListingPreparationCard: View {
     }
 
     private var defaultDraftBody: String {
+        automaticDraftBody(model: completeModelNumber)
+    }
+
+    private var completeModelNumber: String {
+        let original = modelNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !original.isEmpty,
+              let range = productName.range(of: original, options: .caseInsensitive) else {
+            return original
+        }
+        let suffix = productName[range.upperBound...].prefix { character in
+            character.unicodeScalars.allSatisfy { $0.isASCII }
+                && (character.isLetter || character.isNumber || character == "-")
+        }
+        return original + suffix
+    }
+
+    private func automaticDraftBody(model: String) -> String {
         [
             "ブランド：\(brand)",
-            "型番：\(modelNumber)",
+            "型番：\(model)",
             "状態：",
             "動作確認：",
             "付属品：",
