@@ -1823,7 +1823,7 @@ struct ResultView: View {
                         Text("撮影した写真と商品情報")
                     }
                     .font(.caption.bold())
-                    .foregroundStyle(Color(red: 197 / 255, green: 208 / 255, blue: 220 / 255))
+                    .foregroundStyle(Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     if isRecognizing {
@@ -1863,14 +1863,18 @@ struct ResultView: View {
 
                             Text("AIの商品判定")
                                 .font(.headline)
-                                .foregroundStyle(Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255))
+                                .foregroundStyle(Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255))
 
                             Spacer()
 
                             if confidence > 0 {
                                 Text("参考 \(confidence)%")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(green)
+                                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(Color(red: 255 / 255, green: 220 / 255, blue: 84 / 255))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color(red: 104 / 255, green: 78 / 255, blue: 24 / 255).opacity(0.60), in: Capsule())
+                                    .overlay(Capsule().stroke(Color(red: 255 / 255, green: 220 / 255, blue: 84 / 255).opacity(0.8), lineWidth: 1))
                             }
                         }
 
@@ -1901,7 +1905,7 @@ struct ResultView: View {
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         )
                     )
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255).opacity(0.6), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255).opacity(0.6), lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 18))
 
                     InfoCard(
@@ -2027,14 +2031,22 @@ struct ResultView: View {
 
                     Button(action: onCompare) {
                         Label(
-                            "販売先と手取り額を比較",
+                            "販売先の価格比較",
                             systemImage: "chart.bar.fill"
                         )
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
                         .foregroundStyle(.black)
-                        .background(Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255))
+                        .background(
+                            LinearGradient(
+                                colors: [Color(red: 255 / 255, green: 244 / 255, blue: 167 / 255),
+                                         Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255),
+                                         Color(red: 193 / 255, green: 137 / 255, blue: 27 / 255),
+                                         Color(red: 255 / 255, green: 222 / 255, blue: 91 / 255)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
                         .clipShape(
                             RoundedRectangle(
                                 cornerRadius: 16
@@ -2251,7 +2263,7 @@ struct InfoCard: View {
     let value: String
     let icon: String
 
-    private let green = Color(red: 197 / 255, green: 208 / 255, blue: 220 / 255)
+    private let green = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
 
     var body: some View {
         HStack(spacing: 14) {
@@ -2285,8 +2297,9 @@ struct InfoCard: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color(red: 70 / 255, green: 78 / 255, blue: 87 / 255).opacity(0.84),
-                    Color(red: 29 / 255, green: 33 / 255, blue: 38 / 255)
+                    Color(red: 115 / 255, green: 127 / 255, blue: 139 / 255),
+                    Color(red: 41 / 255, green: 47 / 255, blue: 55 / 255),
+                    Color(red: 80 / 255, green: 90 / 255, blue: 101 / 255)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -2297,7 +2310,7 @@ struct InfoCard: View {
                 cornerRadius: 18
             )
             .stroke(
-                green.opacity(0.48),
+                green.opacity(0.82),
                 lineWidth: 1
             )
         )
@@ -2374,7 +2387,7 @@ struct CompareView: View {
                             : productName
                         )
                         .font(.title2.bold())
-                        .foregroundStyle(Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255))
+                        .foregroundStyle(Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255))
 
                         if !barcode.isEmpty {
                             Text("JAN / EAN: \(barcode)")
@@ -2385,7 +2398,7 @@ struct CompareView: View {
 
                     Text("販売中の相場を比べる")
                         .font(.headline)
-                        .foregroundStyle(Color(red: 197 / 255, green: 208 / 255, blue: 220 / 255))
+                        .foregroundStyle(Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255))
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     UsedPriceCard(
@@ -2437,7 +2450,7 @@ struct CompareView: View {
                     ) {
                         Text("この商品を出品するには")
                             .font(.headline)
-                            .foregroundStyle(Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255))
+                            .foregroundStyle(Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255))
 
                         Text(
                             "写真・文章・価格を準備してから出品先を開きます"
@@ -2461,9 +2474,9 @@ struct CompareView: View {
                     .padding(16)
                     .background(
                         LinearGradient(
-                            colors: [Color(red: 61 / 255, green: 49 / 255, blue: 35 / 255),
-                                     Color(red: 31 / 255, green: 34 / 255, blue: 39 / 255),
-                                     Color(red: 44 / 255, green: 43 / 255, blue: 40 / 255)],
+                            colors: [Color(red: 112 / 255, green: 84 / 255, blue: 28 / 255),
+                                     Color(red: 43 / 255, green: 42 / 255, blue: 38 / 255),
+                                     Color(red: 91 / 255, green: 72 / 255, blue: 30 / 255)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         )
                     )
@@ -2472,7 +2485,7 @@ struct CompareView: View {
                             cornerRadius: 18
                         )
                         .stroke(
-                            Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255).opacity(0.55),
+                            Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255).opacity(0.55),
                             lineWidth: 1
                         )
                     )
@@ -3786,11 +3799,14 @@ struct LuxurySectionTitle: View {
                 .background(accent, in: RoundedRectangle(cornerRadius: 8))
             Text(title)
                 .font(.subheadline.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
             Spacer(minLength: 0)
         }
         .padding(9)
-        .background(LinearGradient(colors: [accent.opacity(0.38), accent.opacity(0.15)], startPoint: .leading, endPoint: .trailing))
+        .background(
+            LinearGradient(colors: [Color.white.opacity(0.92), accent, accent.opacity(0.72), accent],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
@@ -3822,8 +3838,8 @@ struct ListingPreparationCard: View {
         green: 223 / 255,
         blue: 209 / 255
     )
-    private let blue = Color(red: 197 / 255, green: 208 / 255, blue: 220 / 255)
-    private let gold = Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255)
+    private let blue = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
+    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
 
     private var allPhotos: [UIImage] {
         (image.map { [$0] } ?? []) + extraPhotos
@@ -4250,8 +4266,8 @@ struct UsedPriceCard: View {
         PriceBandSelection = .median
 
     private var green: Color {
-        if title.contains("メルカリ") { return Color(red: 231 / 255, green: 192 / 255, blue: 121 / 255) }
-        if title.contains("Yahoo") { return Color(red: 197 / 255, green: 208 / 255, blue: 220 / 255) }
+        if title.contains("メルカリ") { return Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255) }
+        if title.contains("Yahoo") { return Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255) }
         return Color(red: 129 / 255, green: 223 / 255, blue: 209 / 255)
     }
 
@@ -4332,7 +4348,11 @@ struct UsedPriceCard: View {
             }
             .padding(10)
             .foregroundStyle(.black)
-            .background(green, in: RoundedRectangle(cornerRadius: 10))
+            .background(
+                LinearGradient(colors: [Color.white.opacity(0.92), green, green.opacity(0.72), green],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
 
             if isLoading {
                 Text(
