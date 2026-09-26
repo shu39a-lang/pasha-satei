@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 @preconcurrency import Vision
 
 enum AppRoute: Hashable {
+    case buyer
     case result
     case compare(
         productName: String,
@@ -279,6 +280,12 @@ struct ContentView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
+    @State private var buyerSelectedPhoto: PhotosPickerItem?
+    @State private var buyerShowCamera = false
+    @State private var buyerImage: UIImage?
+    @State private var buyerProductName = ""
+    @State private var buyerBarcode = ""
+    @State private var buyerIsRecognizing = false
 
     @State private var productName = ""
     @State private var detectedBarcode = ""
@@ -298,6 +305,9 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
+                buyerSelectedPhoto: $buyerSelectedPhoto,
+                buyerShowCamera: $buyerShowCamera,
+                onOpenBuyer: { path.append(.buyer) },
                 hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
                     if hasPreviousSearchResult {
@@ -307,6 +317,15 @@ struct ContentView: View {
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
+                case .buyer:
+                    BuyerDiscoveryView(
+                        image: $buyerImage,
+                        productName: $buyerProductName,
+                        barcode: $buyerBarcode,
+                        isRecognizing: $buyerIsRecognizing,
+                        onRecognize: { photo in startBuyerRecognition(photo) }
+                    )
+
                 case .result:
                     ResultView(
                         image: $selectedImage,
@@ -397,6 +416,28 @@ struct ContentView: View {
     )
     .ignoresSafeArea()
 }
+        .fullScreenCover(isPresented: $buyerShowCamera) {
+            CameraPicker(
+                onImage: { photo in
+                    buyerShowCamera = false
+                    Task { @MainActor in
+                        await Task.yield()
+                        startBuyerRecognition(photo)
+                    }
+                },
+                onCancel: { buyerShowCamera = false }
+            )
+            .ignoresSafeArea()
+        }
+        .onChange(of: buyerSelectedPhoto) { newItem in
+            Task {
+                guard let newItem,
+                      let data = try? await newItem.loadTransferable(type: Data.self),
+                      let photo = UIImage(data: data) else { return }
+                buyerSelectedPhoto = nil
+                startBuyerRecognition(photo)
+            }
+        }
         .onChange(of: selectedPhoto) { newItem in
             Task {
                 guard let newItem,
@@ -415,6 +456,37 @@ struct ContentView: View {
                 await recognize(image: image)
             }
         }
+    }
+
+    @MainActor
+    private func startBuyerRecognition(_ photo: UIImage) {
+        buyerImage = photo
+        buyerProductName = ""
+        buyerBarcode = ""
+        buyerIsRecognizing = true
+        if path.last != .buyer { path.append(.buyer) }
+        Task { await recognizeBuyer(image: photo) }
+    }
+
+    @MainActor
+    private func recognizeBuyer(image: UIImage) async {
+        let local = await LocalProductRecognizer.recognize(image: image)
+        buyerBarcode = local.barcode
+        let result = await GeminiProductAPI.analyze(
+            image: image, ocrText: local.text, barcode: local.barcode
+        )
+        if let result, result.ok {
+            let name = (result.displayName ?? result.productName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            buyerProductName = name.isEmpty ? (result.candidates?.first ?? "") : name
+        }
+        if buyerProductName.isEmpty {
+            buyerProductName = local.text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(2).joined(separator: " ")
+        }
+        buyerIsRecognizing = false
     }
 
     @MainActor
@@ -538,6 +610,9 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
+    @Binding var buyerSelectedPhoto: PhotosPickerItem?
+    @Binding var buyerShowCamera: Bool
+    let onOpenBuyer: () -> Void
 
     @State private var showUsageGuide = false
 
@@ -552,6 +627,9 @@ struct HomeView: View {
                 HomeScreenContent(
                     selectedPhoto: $selectedPhoto,
                     showCamera: $showCamera,
+                    buyerSelectedPhoto: $buyerSelectedPhoto,
+                    buyerShowCamera: $buyerShowCamera,
+                    onOpenBuyer: onOpenBuyer,
                     showUsageGuide: $showUsageGuide,
                     hasPreviousResult: hasPreviousResult,
                     onOpenPreviousResult: onOpenPreviousResult,
@@ -572,6 +650,9 @@ struct HomeView: View {
 struct HomeScreenContent: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
+    @Binding var buyerSelectedPhoto: PhotosPickerItem?
+    @Binding var buyerShowCamera: Bool
+    let onOpenBuyer: () -> Void
     @Binding var showUsageGuide: Bool
 
     let hasPreviousResult: Bool
@@ -595,6 +676,12 @@ struct HomeScreenContent: View {
                     }
                 }
 
+                BuyerEntryPanel(
+                    selectedPhoto: $buyerSelectedPhoto,
+                    showCamera: $buyerShowCamera,
+                    onOpenBuyer: onOpenBuyer
+                )
+
                 HomeGuideButton(compact: compact) {
                     showUsageGuide = true
                 }
@@ -608,6 +695,292 @@ struct HomeScreenContent: View {
             .padding(.bottom, 25)
         }
         .scrollIndicators(.hidden)
+    }
+}
+
+struct BuyerEntryPanel: View {
+    @Binding var selectedPhoto: PhotosPickerItem?
+    @Binding var showCamera: Bool
+    let onOpenBuyer: () -> Void
+
+    private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
+    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
+
+    var body: some View {
+        VStack(spacing: 9) {
+            Button(action: onOpenBuyer) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass.circle.fill")
+                        .font(.title2)
+                    Text("買いたい商品を見つける")
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                }
+                .foregroundStyle(.black)
+                .padding(13)
+                .background(
+                    LinearGradient(colors: [.white, silver, silver.opacity(0.75)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 14)
+                )
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 9) {
+                Button { showCamera = true } label: {
+                    Label("写真を撮る", systemImage: "camera.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label("写真を選ぶ", systemImage: "photo.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .font(.subheadline.bold())
+            .foregroundStyle(gold)
+            .padding(.horizontal, 3)
+        }
+        .padding(10)
+        .background(Color(red: 34 / 255, green: 40 / 255, blue: 46 / 255))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(silver.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct BuyerListing: Identifiable {
+    let source: String
+    let mark: String
+    let color: Color
+    let item: YahooPriceItem
+    let url: URL
+
+    var id: String { source + "|" + item.id }
+}
+
+struct BuyerDiscoveryView: View {
+    @Binding var image: UIImage?
+    @Binding var productName: String
+    @Binding var barcode: String
+    @Binding var isRecognizing: Bool
+    let onRecognize: (UIImage) -> Void
+
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showCamera = false
+    @State private var isLoading = false
+    @State private var hasSearched = false
+    @State private var searchGeneration = 0
+    @State private var mercari: YahooPriceResponse?
+    @State private var yahoo: YahooPriceResponse?
+    @State private var rakuma: YahooPriceResponse?
+
+    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
+    private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
+
+    private var listings: [BuyerListing] {
+        let sources: [(String, String, Color, YahooPriceResponse?)] = [
+            ("メルカリ", "M", Color(red: 235 / 255, green: 91 / 255, blue: 91 / 255), mercari),
+            ("Yahoo!", "Y!", Color(red: 242 / 255, green: 91 / 255, blue: 91 / 255), yahoo),
+            ("ラクマ", "R", Color(red: 232 / 255, green: 91 / 255, blue: 157 / 255), rakuma)
+        ]
+        var seen = Set<String>()
+        return Array(sources.flatMap { sourceInfo in
+            let (source, mark, color, response) = sourceInfo
+            return (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
+                guard item.price > 0, let url = URL(string: item.url),
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+                return BuyerListing(source: source, mark: mark, color: color, item: item, url: url)
+            }
+        }
+        .filter { seen.insert($0.url.absoluteString).inserted }
+        .sorted { $0.item.price < $1.item.price }
+        .prefix(20))
+    }
+
+    var body: some View {
+        ZStack {
+            PremiumAppBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("BUY / 買う人向け")
+                        .font(.caption.bold()).tracking(2).foregroundStyle(gold)
+                    Text("買いたい商品の価格を探す")
+                        .font(.title2.bold()).foregroundStyle(.white)
+                    Text("3サイトの商品をまとめて、価格の安い順に表示します")
+                        .font(.subheadline).foregroundStyle(silver)
+
+                    if let image {
+                        Image(uiImage: image).resizable().scaledToFit()
+                            .frame(maxWidth: .infinity).frame(height: 140)
+                            .background(Color.white.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+
+                    HStack(spacing: 9) {
+                        Button { showCamera = true } label: {
+                            Label("写真を撮る", systemImage: "camera.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Label("写真を選ぶ", systemImage: "photo.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .font(.subheadline.bold()).foregroundStyle(silver)
+                    .padding(5).background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    if isRecognizing {
+                        HStack { ProgressView().tint(gold); Text("写真から商品を判定しています…") }
+                            .font(.subheadline).foregroundStyle(gold)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("商品名・型番を確認または入力")
+                            .font(.caption.bold()).foregroundStyle(silver)
+                        TextField("例：iPad 第8世代 128GB", text: $productName)
+                            .textInputAutocapitalization(.never)
+                            .padding(12)
+                            .background(Color.white.opacity(0.13))
+                            .clipShape(RoundedRectangle(cornerRadius: 9))
+                        if !barcode.isEmpty {
+                            Text("バーコード：\(barcode)")
+                                .font(.caption).foregroundStyle(silver)
+                        }
+                        Button { Task { await loadListings() } } label: {
+                            Label("価格の安い順に探す", systemImage: "magnifyingglass")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .background(gold, in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(.black)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRecognizing || isLoading || productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .opacity(isRecognizing || isLoading ? 0.6 : 1)
+                    }
+                    .padding(14)
+                    .background(Color(red: 63 / 255, green: 55 / 255, blue: 35 / 255))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(gold.opacity(0.65), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    if isLoading { ProgressView("販売中の商品を探しています…").tint(gold) }
+                    if hasSearched {
+                        HStack {
+                            Text("安い順の購入候補").font(.headline)
+                            Spacer()
+                            Text("\(listings.count)件 / 最大20件")
+                                .font(.caption.bold()).foregroundStyle(gold)
+                        }
+                        Text("表示価格順です。送料・状態はリンク先で確認してください。")
+                            .font(.caption).foregroundStyle(silver)
+                        if listings.isEmpty {
+                            Text("商品が見つかりませんでした。商品名や型番を直して再検索してください。")
+                                .font(.subheadline).foregroundStyle(silver)
+                                .padding(14).background(Color.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        ForEach(listings.indices, id: \.self) { index in
+                            let listing = listings[index]
+                            Link(destination: listing.url) {
+                                HStack(spacing: 10) {
+                                    Text("\(index + 1)")
+                                        .font(.headline.bold()).foregroundStyle(gold)
+                                        .frame(width: 28)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(listing.item.name).font(.subheadline.bold())
+                                            .foregroundStyle(.white).lineLimit(2)
+                                        if let condition = listing.item.condition, !condition.isEmpty {
+                                            Text(condition).font(.caption2).foregroundStyle(silver)
+                                        }
+                                        Text("\(listing.item.price.formatted())円")
+                                            .font(.title3.bold()).foregroundStyle(gold)
+                                    }
+                                    Spacer(minLength: 2)
+                                    VStack(spacing: 5) {
+                                        Text(listing.mark).font(.caption.bold())
+                                            .frame(width: 31, height: 31)
+                                            .background(listing.color, in: Circle())
+                                        Text(listing.source).font(.system(size: 9)).lineLimit(1)
+                                        Image(systemName: "arrow.up.right").font(.caption)
+                                    }
+                                    .foregroundStyle(.white)
+                                    .frame(width: 54)
+                                }
+                                .padding(12)
+                                .background(Color(red: 43 / 255, green: 49 / 255, blue: 55 / 255))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(silver.opacity(0.28), lineWidth: 1))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .navigationTitle("買いたい商品を探す")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
+                Task { await loadListings() }
+            }
+        }
+        .onChange(of: isRecognizing) { nowRecognizing in
+            if !nowRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Task { await loadListings() }
+            }
+        }
+        .onChange(of: selectedPhoto) { newItem in
+            Task {
+                guard let newItem,
+                      let data = try? await newItem.loadTransferable(type: Data.self),
+                      let photo = UIImage(data: data) else { return }
+                selectedPhoto = nil
+                resetForNewPhoto()
+                onRecognize(photo)
+            }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker(onImage: { photo in
+                showCamera = false
+                resetForNewPhoto()
+                onRecognize(photo)
+            }, onCancel: { showCamera = false })
+            .ignoresSafeArea()
+        }
+    }
+
+    @MainActor
+    private func resetForNewPhoto() {
+        searchGeneration += 1
+        isLoading = false
+        hasSearched = false
+        mercari = nil
+        yahoo = nil
+        rakuma = nil
+    }
+
+    @MainActor
+    private func loadListings() async {
+        let query = productName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !isRecognizing, !isLoading else { return }
+        searchGeneration += 1
+        let generation = searchGeneration
+        isLoading = true
+        hasSearched = false
+        mercari = nil
+        yahoo = nil
+        rakuma = nil
+        async let mercariResult = MercariPriceAPI.fetch(productName: query)
+        async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
+        let firstTwo = await (mercariResult, yahooResult)
+        guard generation == searchGeneration else { return }
+        mercari = firstTwo.0
+        yahoo = firstTwo.1
+        hasSearched = true
+        let rakumaResult = await RakumaPriceAPI.fetch(productName: query)
+        guard generation == searchGeneration else { return }
+        rakuma = rakumaResult
+        isLoading = false
     }
 }
 
