@@ -902,6 +902,7 @@ struct BuyerDiscoveryView: View {
     @State private var isLoading = false
     @State private var hasSearched = false
     @State private var searchGeneration = 0
+    @State private var editedNameSearchTask: Task<Void, Never>?
     @State private var mercari: YahooPriceResponse?
     @State private var yahoo: YahooPriceResponse?
     @State private var rakuma: YahooPriceResponse?
@@ -962,11 +963,6 @@ struct BuyerDiscoveryView: View {
         return response.ok ? "\(uniqueListings.filter { $0.source == source }.count)件" : "取得不可"
     }
 
-    private var searchTerm: String {
-        let name = productName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? barcode.trimmingCharacters(in: .whitespacesAndNewlines) : name
-    }
-
     var body: some View {
         ZStack {
             PremiumAppBackground()
@@ -1022,15 +1018,8 @@ struct BuyerDiscoveryView: View {
                             Text("バーコード：\(barcode)")
                                 .font(.caption).foregroundStyle(silver)
                         }
-                        Button { Task { await loadListings() } } label: {
-                            Label("価格の安い順に探す", systemImage: "magnifyingglass")
-                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
-                                .background(gold, in: RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(.black)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isRecognizing || isLoading || searchTerm.isEmpty)
-                        .opacity(isRecognizing || isLoading ? 0.6 : 1)
+                        Text("商品名を直すと自動で再検索します")
+                            .font(.caption).foregroundStyle(silver)
                     }
                     .padding(14)
                     .background(Color(red: 63 / 255, green: 55 / 255, blue: 35 / 255))
@@ -1122,6 +1111,20 @@ struct BuyerDiscoveryView: View {
                 Task { await loadListings() }
             }
         }
+        .onChange(of: productName) { editedName in
+            editedNameSearchTask?.cancel()
+            searchGeneration += 1
+            isLoading = false
+            hasSearched = false
+            let query = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !isRecognizing, !query.isEmpty else { return }
+            editedNameSearchTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled,
+                      productName.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+                await loadListings()
+            }
+        }
         .onChange(of: selectedPhoto) { newItem in
             Task {
                 guard let newItem,
@@ -1144,6 +1147,7 @@ struct BuyerDiscoveryView: View {
 
     @MainActor
     private func resetForNewPhoto() {
+        editedNameSearchTask?.cancel()
         searchGeneration += 1
         isLoading = false
         hasSearched = false
