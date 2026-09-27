@@ -758,7 +758,7 @@ struct BuyerDiscoveryView: View {
     private var uniqueListings: [BuyerListing] {
         let candidates = activeSources.flatMap { sourceInfo in
             let (source, response) = sourceInfo
-            (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
+            return (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
                 guard item.price > 0, let url = URL(string: item.url),
                       ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
                       BuyerProductFilter.isMatching(item, query: productName, condition: condition) else { return nil }
