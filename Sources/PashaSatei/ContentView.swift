@@ -8,7 +8,8 @@ import UniformTypeIdentifiers
 @preconcurrency import Vision
 
 enum AppRoute: Hashable {
-    case buyer
+    case buyerNew
+    case buyerUsed
     case result
     case compare(
         productName: String,
@@ -314,7 +315,7 @@ struct ContentView: View {
                     buyerImage = nil
                     buyerProductName = ""
                     buyerBarcode = ""
-                    path.append(.buyer)
+                    path.append(condition == .new ? .buyerNew : .buyerUsed)
                 },
                 hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
@@ -325,9 +326,17 @@ struct ContentView: View {
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
-                case .buyer:
+                case .buyerNew:
+                    NewBuyerSearchView(
+                        image: $buyerImage,
+                        productName: $buyerProductName,
+                        barcode: $buyerBarcode,
+                        isRecognizing: $buyerIsRecognizing,
+                        onRecognize: { photo in startBuyerRecognition(photo) }
+                    )
+
+                case .buyerUsed:
                     BuyerDiscoveryView(
-                        condition: buyerCondition,
                         image: $buyerImage,
                         productName: $buyerProductName,
                         barcode: $buyerBarcode,
@@ -451,7 +460,8 @@ struct ContentView: View {
         buyerProductName = ""
         buyerBarcode = ""
         buyerIsRecognizing = true
-        if path.last != .buyer { path.append(.buyer) }
+        let route: AppRoute = buyerCondition == .new ? .buyerNew : .buyerUsed
+        if path.last != route { path.append(route) }
         Task { await recognizeBuyer(image: photo) }
     }
 
@@ -718,6 +728,160 @@ struct BuyerEntryPanel: View {
     }
 }
 
+struct NewBuyerSearchView: View {
+    @Binding var image: UIImage?
+    @Binding var productName: String
+    @Binding var barcode: String
+    @Binding var isRecognizing: Bool
+    let onRecognize: (UIImage) -> Void
+
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showCamera = false
+    @State private var didOpenCamera = false
+
+    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
+    private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
+
+    private var searchTerm: String {
+        let name = productName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? barcode.trimmingCharacters(in: .whitespacesAndNewlines) : name
+    }
+
+    private var newProductQuery: String {
+        searchTerm.contains("新品") ? searchTerm : searchTerm + " 新品"
+    }
+
+    private var amazonURL: URL {
+        var components = URLComponents(string: "https://www.amazon.co.jp/s")!
+        components.queryItems = [URLQueryItem(name: "k", value: newProductQuery)]
+        return components.url!
+    }
+
+    private var rakutenURL: URL {
+        var components = URLComponents(string: "https://search.rakuten.co.jp/search/mall/")!
+        components.path += newProductQuery + "/"
+        return components.url!
+    }
+
+    var body: some View {
+        ZStack {
+            PremiumAppBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("NEW / 新品を探す")
+                        .font(.caption.bold()).tracking(2).foregroundStyle(gold)
+                    Text("新品をAmazon・楽天で検索")
+                        .font(.title2.bold()).foregroundStyle(.white)
+                    Text("写真で商品を判定し、各サイトの検索結果を直接開きます")
+                        .font(.subheadline).foregroundStyle(silver)
+
+                    if let image {
+                        Image(uiImage: image).resizable().scaledToFit()
+                            .frame(maxWidth: .infinity).frame(height: 180)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Label("新品を探す商品の写真を撮影", systemImage: "camera.viewfinder")
+                            .font(.headline).foregroundStyle(gold)
+                            .frame(maxWidth: .infinity, minHeight: 130)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    HStack(spacing: 10) {
+                        Button { showCamera = true } label: {
+                            Label(image == nil ? "写真を撮る" : "撮り直す", systemImage: "camera.fill")
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .background(gold, in: RoundedRectangle(cornerRadius: 12))
+                                .foregroundStyle(.black)
+                        }
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Label("写真を選ぶ", systemImage: "photo.fill")
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .background(silver.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .font(.subheadline.bold()).buttonStyle(.plain)
+
+                    if isRecognizing {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(gold)
+                            Text("写真から商品名を判定しています…")
+                        }
+                        .font(.subheadline).foregroundStyle(gold)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("検索する商品名・型番")
+                            .font(.headline).foregroundStyle(.white)
+                        TextField("例：iPad 第8世代 128GB", text: $productName)
+                            .textInputAutocapitalization(.never)
+                            .padding(13)
+                            .background(Color.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 10))
+                        if !barcode.isEmpty {
+                            Text("バーコード：\(barcode)")
+                                .font(.caption).foregroundStyle(silver)
+                        }
+                        Text(searchTerm.isEmpty
+                             ? "判定後、ここに商品名が入ります。手入力もできます。"
+                             : "「\(newProductQuery)」の検索結果が開きます。名前は修正できます。")
+                            .font(.caption).foregroundStyle(silver)
+
+                        searchLink("Amazonで検索結果を見る", source: "Amazon", url: amazonURL, color: gold)
+                        searchLink("楽天市場で検索結果を見る", source: "楽天市場", url: rakutenURL, color: silver)
+                        Text("サイトで検索は実行済みの状態で開きます。価格・新品の状態は各商品ページで確認してください。")
+                            .font(.caption2).foregroundStyle(silver)
+                    }
+                    .padding(15)
+                    .background(Color(red: 63 / 255, green: 55 / 255, blue: 35 / 255),
+                                in: RoundedRectangle(cornerRadius: 16))
+                }
+                .padding(16)
+            }
+        }
+        .navigationTitle("新品を探す")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !didOpenCamera && image == nil {
+                didOpenCamera = true
+                showCamera = true
+            }
+        }
+        .onChange(of: selectedPhoto) { item in
+            Task {
+                guard let item,
+                      let data = try? await item.loadTransferable(type: Data.self),
+                      let photo = UIImage(data: data) else { return }
+                selectedPhoto = nil
+                onRecognize(photo)
+            }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker(onImage: { photo in
+                showCamera = false
+                onRecognize(photo)
+            }, onCancel: { showCamera = false })
+            .ignoresSafeArea()
+        }
+    }
+
+    private func searchLink(_ label: String, source: String, url: URL, color: Color) -> some View {
+        Link(destination: url) {
+            HStack(spacing: 12) {
+                BuyerSourceMark(source: source)
+                Text(label).font(.headline)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+            }
+            .padding(12)
+            .background(color, in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(.black)
+        }
+        .buttonStyle(.plain)
+        .disabled(isRecognizing || searchTerm.isEmpty)
+        .opacity(isRecognizing || searchTerm.isEmpty ? 0.5 : 1)
+    }
+}
+
 struct BuyerListing: Identifiable {
     let source: String
     let item: YahooPriceItem
@@ -727,7 +891,6 @@ struct BuyerListing: Identifiable {
 }
 
 struct BuyerDiscoveryView: View {
-    let condition: BuyerCondition
     @Binding var image: UIImage?
     @Binding var productName: String
     @Binding var barcode: String
@@ -757,7 +920,7 @@ struct BuyerDiscoveryView: View {
             return (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
                 guard item.price > 0, let url = URL(string: item.url),
                       ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-                      BuyerProductFilter.isMatching(item, query: productName, condition: condition) else { return nil }
+                      BuyerProductFilter.isMatching(item, query: productName, condition: .used) else { return nil }
                 return BuyerListing(source: source, item: item, url: url)
             }
         }.sorted { $0.item.price < $1.item.price }
@@ -804,43 +967,16 @@ struct BuyerDiscoveryView: View {
         return name.isEmpty ? barcode.trimmingCharacters(in: .whitespacesAndNewlines) : name
     }
 
-    private func searchURL(_ base: String, key: String?) -> URL {
-        var components = URLComponents(string: base)!
-        let query = searchTerm.contains("新品") ? searchTerm : searchTerm + " 新品"
-        if let key {
-            components.queryItems = [URLQueryItem(name: key, value: query)]
-        } else {
-            components.path += query + "/"
-        }
-        return components.url ?? URL(string: base)!
-    }
-
-    private func newSearchLink(_ source: String, destination: URL, color: Color) -> some View {
-        Link(destination: destination) {
-            HStack(spacing: 6) {
-                BuyerSourceMark(source: source)
-                Text(source).font(.subheadline.bold()).lineLimit(1)
-                Image(systemName: "arrow.up.right").font(.caption.bold())
-            }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(color, in: RoundedRectangle(cornerRadius: 11))
-            .foregroundStyle(.black)
-        }
-        .buttonStyle(.plain)
-        .disabled(isRecognizing || searchTerm.isEmpty)
-        .opacity(isRecognizing || searchTerm.isEmpty ? 0.5 : 1)
-    }
-
     var body: some View {
         ZStack {
             PremiumAppBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("BUY / \(condition.rawValue)を探す")
+                    Text("USED / 中古を探す")
                         .font(.caption.bold()).tracking(2).foregroundStyle(gold)
-                    Text("買いたい商品の価格を探す")
+                    Text("中古商品の価格を探す")
                         .font(.title2.bold()).foregroundStyle(.white)
-                    Text(condition == .new ? "商品名を入れてAmazon・楽天市場をワンタップ検索" : "メルカリ・Yahoo!・ラクマの中古品を比較")
+                    Text("メルカリ・Yahoo!・ラクマの中古品を比較")
                         .font(.subheadline).foregroundStyle(silver)
 
                     if let image {
@@ -886,36 +1022,23 @@ struct BuyerDiscoveryView: View {
                             Text("バーコード：\(barcode)")
                                 .font(.caption).foregroundStyle(silver)
                         }
-                        if condition == .new {
-                            Text(searchTerm.isEmpty
-                                 ? "写真を撮るか、商品名・型番を入力してください。"
-                                 : "上の名前で検索します。必要なら直してから選んでください。")
-                                .font(.caption).foregroundStyle(silver)
-                            HStack(spacing: 9) {
-                                newSearchLink("Amazon", destination: searchURL("https://www.amazon.co.jp/s", key: "k"), color: gold)
-                                newSearchLink("楽天市場", destination: searchURL("https://search.rakuten.co.jp/search/mall/", key: nil), color: silver)
-                            }
-                            Text("各サイトの検索結果が開きます。価格と新品の状態はリンク先で確認してください。")
-                                .font(.caption2).foregroundStyle(silver)
-                        } else {
-                            Button { Task { await loadListings() } } label: {
-                                Label("価格の安い順に探す", systemImage: "magnifyingglass")
-                                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
-                                    .background(gold, in: RoundedRectangle(cornerRadius: 10))
-                                    .foregroundStyle(.black)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isRecognizing || isLoading || searchTerm.isEmpty)
-                            .opacity(isRecognizing || isLoading ? 0.6 : 1)
+                        Button { Task { await loadListings() } } label: {
+                            Label("価格の安い順に探す", systemImage: "magnifyingglass")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .background(gold, in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(.black)
                         }
+                        .buttonStyle(.plain)
+                        .disabled(isRecognizing || isLoading || searchTerm.isEmpty)
+                        .opacity(isRecognizing || isLoading ? 0.6 : 1)
                     }
                     .padding(14)
                     .background(Color(red: 63 / 255, green: 55 / 255, blue: 35 / 255))
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(gold.opacity(0.65), lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
 
-                    if condition == .used && isLoading { ProgressView("販売中の商品を探しています…").tint(gold) }
-                    if condition == .used && hasSearched {
+                    if isLoading { ProgressView("販売中の商品を探しています…").tint(gold) }
+                    if hasSearched {
                         HStack {
                             Text("安い順の購入候補").font(.headline)
                             Spacer()
@@ -990,12 +1113,12 @@ struct BuyerDiscoveryView: View {
             if !openedCamera && image == nil {
                 openedCamera = true
                 showCamera = true
-            } else if condition == .used && !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
+            } else if !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
                 Task { await loadListings() }
             }
         }
         .onChange(of: isRecognizing) { nowRecognizing in
-            if condition == .used && !nowRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !nowRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Task { await loadListings() }
             }
         }
@@ -1032,7 +1155,7 @@ struct BuyerDiscoveryView: View {
     @MainActor
     private func loadListings() async {
         let query = productName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard condition == .used, !query.isEmpty, !isRecognizing, !isLoading else { return }
+        guard !query.isEmpty, !isRecognizing, !isLoading else { return }
         searchGeneration += 1
         let generation = searchGeneration
         isLoading = true
