@@ -675,6 +675,14 @@ struct HomeScreenContent: View {
 
                 HomeFeatureRow(compact: compact)
                     .padding(.top, 3)
+
+                Link(destination: URL(string: "https://github.com/shu39a-lang/pasha-satei/blob/main/PRIVACY.md")!) {
+                    Text("プライバシーポリシー")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
