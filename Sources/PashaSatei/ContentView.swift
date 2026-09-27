@@ -742,17 +742,13 @@ struct BuyerDiscoveryView: View {
     @State private var mercari: YahooPriceResponse?
     @State private var yahoo: YahooPriceResponse?
     @State private var rakuma: YahooPriceResponse?
-    @State private var amazon: YahooPriceResponse?
-    @State private var rakuten: YahooPriceResponse?
     @State private var openedCamera = false
 
     private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
     private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
 
     private var activeSources: [(String, YahooPriceResponse?)] {
-        condition == .new
-            ? [("Amazon", amazon), ("楽天市場", rakuten)]
-            : [("メルカリ", mercari), ("Yahoo!", yahoo), ("ラクマ", rakuma)]
+        [("メルカリ", mercari), ("Yahoo!", yahoo), ("ラクマ", rakuma)]
     }
 
     private var uniqueListings: [BuyerListing] {
@@ -803,14 +799,36 @@ struct BuyerDiscoveryView: View {
         return response.ok ? "\(uniqueListings.filter { $0.source == source }.count)件" : "取得不可"
     }
 
+    private var searchTerm: String {
+        let name = productName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? barcode.trimmingCharacters(in: .whitespacesAndNewlines) : name
+    }
+
     private func searchURL(_ base: String, key: String?) -> URL {
         var components = URLComponents(string: base)!
+        let query = searchTerm.contains("新品") ? searchTerm : searchTerm + " 新品"
         if let key {
-            components.queryItems = [URLQueryItem(name: key, value: productName)]
+            components.queryItems = [URLQueryItem(name: key, value: query)]
         } else {
-            components.path += productName + "/"
+            components.path += query + "/"
         }
         return components.url ?? URL(string: base)!
+    }
+
+    private func newSearchLink(_ source: String, destination: URL, color: Color) -> some View {
+        Link(destination: destination) {
+            HStack(spacing: 6) {
+                BuyerSourceMark(source: source)
+                Text(source).font(.subheadline.bold()).lineLimit(1)
+                Image(systemName: "arrow.up.right").font(.caption.bold())
+            }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(color, in: RoundedRectangle(cornerRadius: 11))
+            .foregroundStyle(.black)
+        }
+        .buttonStyle(.plain)
+        .disabled(isRecognizing || searchTerm.isEmpty)
+        .opacity(isRecognizing || searchTerm.isEmpty ? 0.5 : 1)
     }
 
     var body: some View {
@@ -822,7 +840,7 @@ struct BuyerDiscoveryView: View {
                         .font(.caption.bold()).tracking(2).foregroundStyle(gold)
                     Text("買いたい商品の価格を探す")
                         .font(.title2.bold()).foregroundStyle(.white)
-                    Text(condition == .new ? "Amazonと楽天市場の新品を比較" : "メルカリ・Yahoo!・ラクマの中古品を比較")
+                    Text(condition == .new ? "商品名を入れてAmazon・楽天市場をワンタップ検索" : "メルカリ・Yahoo!・ラクマの中古品を比較")
                         .font(.subheadline).foregroundStyle(silver)
 
                     if let image {
@@ -868,23 +886,36 @@ struct BuyerDiscoveryView: View {
                             Text("バーコード：\(barcode)")
                                 .font(.caption).foregroundStyle(silver)
                         }
-                        Button { Task { await loadListings() } } label: {
-                            Label("価格の安い順に探す", systemImage: "magnifyingglass")
-                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
-                                .background(gold, in: RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(.black)
+                        if condition == .new {
+                            Text(searchTerm.isEmpty
+                                 ? "写真を撮るか、商品名・型番を入力してください。"
+                                 : "上の名前で検索します。必要なら直してから選んでください。")
+                                .font(.caption).foregroundStyle(silver)
+                            HStack(spacing: 9) {
+                                newSearchLink("Amazon", destination: searchURL("https://www.amazon.co.jp/s", key: "k"), color: gold)
+                                newSearchLink("楽天市場", destination: searchURL("https://search.rakuten.co.jp/search/mall/", key: nil), color: silver)
+                            }
+                            Text("各サイトの検索結果が開きます。価格と新品の状態はリンク先で確認してください。")
+                                .font(.caption2).foregroundStyle(silver)
+                        } else {
+                            Button { Task { await loadListings() } } label: {
+                                Label("価格の安い順に探す", systemImage: "magnifyingglass")
+                                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
+                                    .background(gold, in: RoundedRectangle(cornerRadius: 10))
+                                    .foregroundStyle(.black)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isRecognizing || isLoading || searchTerm.isEmpty)
+                            .opacity(isRecognizing || isLoading ? 0.6 : 1)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isRecognizing || isLoading || productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .opacity(isRecognizing || isLoading ? 0.6 : 1)
                     }
                     .padding(14)
                     .background(Color(red: 63 / 255, green: 55 / 255, blue: 35 / 255))
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(gold.opacity(0.65), lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
 
-                    if isLoading { ProgressView("販売中の商品を探しています…").tint(gold) }
-                    if hasSearched {
+                    if condition == .used && isLoading { ProgressView("販売中の商品を探しています…").tint(gold) }
+                    if condition == .used && hasSearched {
                         HStack {
                             Text("安い順の購入候補").font(.headline)
                             Spacer()
@@ -896,20 +927,10 @@ struct BuyerDiscoveryView: View {
                         Text(activeSources.map { "\($0.0) \(sourceStatus($0.0, $0.1))" }.joined(separator: " ・ "))
                             .font(.caption.bold()).foregroundStyle(silver)
                         if listings.isEmpty {
-                            Text(condition == .new
-                                 ? "新品の価格データを取得できませんでした。各サイトで商品名を確認できます。"
-                                 : "本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
+                            Text("本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
                                 .padding(14).background(Color.white.opacity(0.08))
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                            if condition == .new {
-                                HStack {
-                                    Link("Amazonで探す", destination: searchURL("https://www.amazon.co.jp/s", key: "k"))
-                                    Spacer()
-                                    Link("楽天市場で探す", destination: searchURL("https://search.rakuten.co.jp/search/mall/", key: nil))
-                                }
-                                .font(.subheadline.bold()).foregroundStyle(gold)
-                            }
                         }
                         ForEach(listings.indices, id: \.self) { index in
                             let listing = listings[index]
@@ -969,12 +990,12 @@ struct BuyerDiscoveryView: View {
             if !openedCamera && image == nil {
                 openedCamera = true
                 showCamera = true
-            } else if !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
+            } else if condition == .used && !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
                 Task { await loadListings() }
             }
         }
         .onChange(of: isRecognizing) { nowRecognizing in
-            if !nowRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if condition == .used && !nowRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Task { await loadListings() }
             }
         }
@@ -1006,14 +1027,12 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        amazon = nil
-        rakuten = nil
     }
 
     @MainActor
     private func loadListings() async {
         let query = productName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, !isRecognizing, !isLoading else { return }
+        guard condition == .used, !query.isEmpty, !isRecognizing, !isLoading else { return }
         searchGeneration += 1
         let generation = searchGeneration
         isLoading = true
@@ -1021,23 +1040,14 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        if condition == .new {
-            async let amazonResult = NewPriceAPI.fetch(action: "amazonNewPrice", productName: query, barcode: barcode)
-            async let rakutenResult = NewPriceAPI.fetch(action: "rakutenNewPrice", productName: query, barcode: barcode)
-            let results = await (amazonResult, rakutenResult)
-            guard generation == searchGeneration else { return }
-            amazon = results.0
-            rakuten = results.1
-        } else {
-            async let mercariResult = MercariPriceAPI.fetch(productName: query)
-            async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
-            async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
-            let results = await (mercariResult, yahooResult, rakumaResult)
-            guard generation == searchGeneration else { return }
-            mercari = results.0
-            yahoo = results.1
-            rakuma = results.2
-        }
+        async let mercariResult = MercariPriceAPI.fetch(productName: query)
+        async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
+        async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
+        let results = await (mercariResult, yahooResult, rakumaResult)
+        guard generation == searchGeneration else { return }
+        mercari = results.0
+        yahoo = results.1
+        rakuma = results.2
         isLoading = false
         hasSearched = true
     }
@@ -5320,25 +5330,6 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
-    }
-}
-
-enum NewPriceAPI {
-    private static let endpoint = "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
-
-    static func fetch(action: String, productName: String, barcode: String) async -> YahooPriceResponse? {
-        guard let url = URL(string: endpoint),
-              let body = try? JSONSerialization.data(withJSONObject: [
-                "action": action, "productName": productName, "barcode": barcode
-              ]) else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        request.timeoutInterval = 20
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, 200...299 ~= http.statusCode else { return nil }
-        return try? JSONDecoder().decode(YahooPriceResponse.self, from: data)
     }
 }
 
