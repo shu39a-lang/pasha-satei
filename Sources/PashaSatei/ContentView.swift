@@ -275,11 +275,17 @@ struct PremiumFeatureItem: View {
     }
 }
 
+enum BuyerCondition: String {
+    case new = "新品"
+    case used = "中古"
+}
+
 struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showCamera = false
+    @State private var buyerCondition: BuyerCondition = .used
     @State private var buyerImage: UIImage?
     @State private var buyerProductName = ""
     @State private var buyerBarcode = ""
@@ -303,7 +309,13 @@ struct ContentView: View {
             HomeView(
                 selectedPhoto: $selectedPhoto,
                 showCamera: $showCamera,
-                onOpenBuyer: { path.append(.buyer) },
+                onOpenBuyer: { condition in
+                    buyerCondition = condition
+                    buyerImage = nil
+                    buyerProductName = ""
+                    buyerBarcode = ""
+                    path.append(.buyer)
+                },
                 hasPreviousResult: hasPreviousSearchResult,
                 onOpenPreviousResult: {
                     if hasPreviousSearchResult {
@@ -315,6 +327,7 @@ struct ContentView: View {
                 switch route {
                 case .buyer:
                     BuyerDiscoveryView(
+                        condition: buyerCondition,
                         image: $buyerImage,
                         productName: $buyerProductName,
                         barcode: $buyerBarcode,
@@ -584,7 +597,7 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
-    let onOpenBuyer: () -> Void
+    let onOpenBuyer: (BuyerCondition) -> Void
 
     @State private var showUsageGuide = false
 
@@ -620,7 +633,7 @@ struct HomeView: View {
 struct HomeScreenContent: View {
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var showCamera: Bool
-    let onOpenBuyer: () -> Void
+    let onOpenBuyer: (BuyerCondition) -> Void
     @Binding var showUsageGuide: Bool
 
     let hasPreviousResult: Bool
@@ -663,43 +676,50 @@ struct HomeScreenContent: View {
 }
 
 struct BuyerEntryPanel: View {
-    let onOpenBuyer: () -> Void
+    let onOpenBuyer: (BuyerCondition) -> Void
 
     private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
+    private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
 
     var body: some View {
-        VStack(spacing: 9) {
-            Button(action: onOpenBuyer) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass.circle.fill")
-                        .font(.title2)
-                    Text("買いたい商品を見つける")
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                }
-                .foregroundStyle(.black)
-                .padding(13)
-                .background(
-                    LinearGradient(colors: [.white, silver, silver.opacity(0.75)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 14)
-                )
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass.circle.fill")
+                Text("買いたい商品を見つける")
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
+            .font(.subheadline.bold())
+            .foregroundStyle(.white)
 
+            HStack(spacing: 8) {
+                buyerButton(.new, color: gold)
+                buyerButton(.used, color: silver)
+            }
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .frame(height: 68)
         .background(Color(red: 34 / 255, green: 40 / 255, blue: 46 / 255))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(silver.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func buyerButton(_ condition: BuyerCondition, color: Color) -> some View {
+        Button { onOpenBuyer(condition) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: condition == .new ? "sparkles" : "shippingbox.fill")
+                Text(condition.rawValue)
+            }
+            .font(.subheadline.bold())
+            .frame(maxWidth: .infinity, minHeight: 32)
+            .background(color, in: RoundedRectangle(cornerRadius: 9))
+            .foregroundStyle(.black)
+        }
+        .buttonStyle(.plain)
     }
 }
 
 struct BuyerListing: Identifiable {
     let source: String
-    let mark: String
-    let color: Color
     let item: YahooPriceItem
     let url: URL
 
@@ -707,6 +727,7 @@ struct BuyerListing: Identifiable {
 }
 
 struct BuyerDiscoveryView: View {
+    let condition: BuyerCondition
     @Binding var image: UIImage?
     @Binding var productName: String
     @Binding var barcode: String
@@ -721,76 +742,75 @@ struct BuyerDiscoveryView: View {
     @State private var mercari: YahooPriceResponse?
     @State private var yahoo: YahooPriceResponse?
     @State private var rakuma: YahooPriceResponse?
+    @State private var amazon: YahooPriceResponse?
+    @State private var rakuten: YahooPriceResponse?
+    @State private var openedCamera = false
 
     private let gold = Color(red: 255 / 255, green: 214 / 255, blue: 67 / 255)
     private let silver = Color(red: 226 / 255, green: 237 / 255, blue: 249 / 255)
 
+    private var activeSources: [(String, YahooPriceResponse?)] {
+        condition == .new
+            ? [("Amazon", amazon), ("楽天市場", rakuten)]
+            : [("メルカリ", mercari), ("Yahoo!", yahoo), ("ラクマ", rakuma)]
+    }
+
     private var uniqueListings: [BuyerListing] {
-        let sources: [(String, String, Color, YahooPriceResponse?)] = [
-            ("メルカリ", "M", Color(red: 235 / 255, green: 91 / 255, blue: 91 / 255), mercari),
-            ("Yahoo!", "Y!", Color(red: 242 / 255, green: 91 / 255, blue: 91 / 255), yahoo),
-            ("ラクマ", "R", Color(red: 232 / 255, green: 91 / 255, blue: 157 / 255), rakuma)
-        ]
-        let candidates = sources.flatMap { sourceInfo in
-            let (source, mark, color, response) = sourceInfo
-            return (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
+        let candidates = activeSources.flatMap { sourceInfo in
+            let (source, response) = sourceInfo
+            (response?.ok == true ? response?.items ?? [] : []).compactMap { item -> BuyerListing? in
                 guard item.price > 0, let url = URL(string: item.url),
-                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-                return BuyerListing(source: source, mark: mark, color: color, item: item, url: url)
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                      BuyerProductFilter.isMatching(item, query: productName, condition: condition) else { return nil }
+                return BuyerListing(source: source, item: item, url: url)
             }
-        }
+        }.sorted { $0.item.price < $1.item.price }
+
         var seenURLs = Set<String>()
         var seenPhotos = Set<String>()
-        var seenWithoutPhotos = Set<String>()
         var seenTitles = Set<String>()
         return candidates.filter { listing in
-            // Ignore tracking parameters when the same listing URL appears twice.
-            let urlKey = (listing.url.scheme?.lowercased() ?? "") + "://" +
-                (listing.url.host?.lowercased() ?? "") + listing.url.path
+            let urlKey = (listing.url.host?.lowercased() ?? "") + listing.url.path
             guard seenURLs.insert(urlKey).inserted else { return false }
-
-            // 同じ写真・価格で別URLの再掲載を1件にまとめる。
-            let photo = listing.item.imageUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let photo = listing.item.imageUrl ?? ""
             if let imageURL = URL(string: photo), let host = imageURL.host, !imageURL.path.isEmpty {
                 let key = "\(listing.source)|\(listing.item.price)|\(host.lowercased())|\(imageURL.path)"
                 guard seenPhotos.insert(key).inserted else { return false }
             }
-
-            // 写真URLが異なっても、同じサイト・商品名・価格なら一覧では一件にする。
-            // 型番などを含む十分長い名前に限定して、短い汎用名は残す。
-            let name = listing.item.name.folding(options: [.widthInsensitive, .caseInsensitive], locale: .current)
-                .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
-                .map { String($0) }.joined()
-            if name.count >= 14 {
+            let name = BuyerProductFilter.normalized(listing.item.name)
+            if name.count >= 8 {
                 let key = "\(listing.source)|\(listing.item.price)|\(name)"
                 guard seenTitles.insert(key).inserted else { return false }
             }
-
-            // 写真も十分な商品名もない場合は販売者も照合する。
-            let seller = listing.item.seller?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !seller.isEmpty else { return true }
-            let key = "\(listing.source)|\(listing.item.price)|\(seller.lowercased())|\(name)"
-            return seenWithoutPhotos.insert(key).inserted
+            return true
         }
     }
 
     private var listings: [BuyerListing] {
-        let sorted = uniqueListings.sorted { $0.item.price < $1.item.price }
-        // 各サイトの最安3件を確保してから、残りを価格順で20件まで埋める。
-        let priority = ["メルカリ", "Yahoo!", "ラクマ"].flatMap { source in
-            Array(sorted.filter { $0.source == source }.prefix(3))
+        let sorted = uniqueListings
+        let reserved = activeSources.flatMap { sourceInfo in
+            let source = sourceInfo.0
+            return Array(sorted.filter { $0.source == source }.prefix(3))
         }
-        let reserved = Set(priority.map(\.id))
-        let remainder = sorted.filter { !reserved.contains($0.id) }
-        return (priority + Array(remainder.prefix(max(0, 20 - priority.count))))
+        let reservedIDs = Set(reserved.map(\.id))
+        let remainder = sorted.filter { !reservedIDs.contains($0.id) }
+        return (reserved + Array(remainder.prefix(max(0, 20 - reserved.count))))
             .sorted { $0.item.price < $1.item.price }
     }
 
     private func sourceStatus(_ source: String, _ response: YahooPriceResponse?) -> String {
-        if let response {
-            return response.ok ? "\(uniqueListings.filter { $0.source == source }.count)件" : "取得失敗"
+        guard let response else { return isLoading ? "取得中" : "取得不可" }
+        return response.ok ? "\(uniqueListings.filter { $0.source == source }.count)件" : "取得不可"
+    }
+
+    private func searchURL(_ base: String, key: String?) -> URL {
+        var components = URLComponents(string: base)!
+        if let key {
+            components.queryItems = [URLQueryItem(name: key, value: productName)]
+        } else {
+            components.path += productName + "/"
         }
-        return isLoading ? "取得中" : "取得失敗"
+        return components.url ?? URL(string: base)!
     }
 
     var body: some View {
@@ -798,11 +818,11 @@ struct BuyerDiscoveryView: View {
             PremiumAppBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("BUY / 買う人向け")
+                    Text("BUY / \(condition.rawValue)を探す")
                         .font(.caption.bold()).tracking(2).foregroundStyle(gold)
                     Text("買いたい商品の価格を探す")
                         .font(.title2.bold()).foregroundStyle(.white)
-                    Text("3サイトの価格を比べて、購入候補を探せます")
+                    Text(condition == .new ? "Amazonと楽天市場の新品を比較" : "メルカリ・Yahoo!・ラクマの中古品を比較")
                         .font(.subheadline).foregroundStyle(silver)
 
                     if let image {
@@ -871,15 +891,25 @@ struct BuyerDiscoveryView: View {
                             Text("\(listings.count)件 / 最大20件")
                                 .font(.caption.bold()).foregroundStyle(gold)
                         }
-                        Text("各サイトの安い商品を最大3件ずつ含めて価格順に表示。送料・状態はリンク先で確認してください。")
+                        Text("各サイトの一致する商品を最大3件ずつ含めて価格順に表示。送料・状態はリンク先で確認してください。")
                             .font(.caption).foregroundStyle(silver)
-                        Text("重複除去後：メルカリ \(sourceStatus("メルカリ", mercari)) ・ Yahoo! \(sourceStatus("Yahoo!", yahoo)) ・ ラクマ \(sourceStatus("ラクマ", rakuma))")
+                        Text(activeSources.map { "\($0.0) \(sourceStatus($0.0, $0.1))" }.joined(separator: " ・ "))
                             .font(.caption.bold()).foregroundStyle(silver)
                         if listings.isEmpty {
-                            Text("商品が見つかりませんでした。商品名や型番を直して再検索してください。")
+                            Text(condition == .new
+                                 ? "新品の価格データを取得できませんでした。各サイトで商品名を確認できます。"
+                                 : "本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
                                 .padding(14).background(Color.white.opacity(0.08))
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                            if condition == .new {
+                                HStack {
+                                    Link("Amazonで探す", destination: searchURL("https://www.amazon.co.jp/s", key: "k"))
+                                    Spacer()
+                                    Link("楽天市場で探す", destination: searchURL("https://search.rakuten.co.jp/search/mall/", key: nil))
+                                }
+                                .font(.subheadline.bold()).foregroundStyle(gold)
+                            }
                         }
                         ForEach(listings.indices, id: \.self) { index in
                             let listing = listings[index]
@@ -913,9 +943,8 @@ struct BuyerDiscoveryView: View {
                                     }
                                     Spacer(minLength: 2)
                                     VStack(spacing: 5) {
-                                        Text(listing.mark).font(.caption.bold())
-                                            .frame(width: 31, height: 31)
-                                            .background(listing.color, in: Circle())
+                                        BuyerSourceMark(source: listing.source)
+                                            .frame(width: 35, height: 35)
                                         Text(listing.source).font(.system(size: 9)).lineLimit(1)
                                         Image(systemName: "arrow.up.right").font(.caption)
                                     }
@@ -937,7 +966,10 @@ struct BuyerDiscoveryView: View {
         .navigationTitle("買いたい商品を探す")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
+            if !openedCamera && image == nil {
+                openedCamera = true
+                showCamera = true
+            } else if !isRecognizing && !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasSearched {
                 Task { await loadListings() }
             }
         }
@@ -974,6 +1006,8 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
+        amazon = nil
+        rakuten = nil
     }
 
     @MainActor
@@ -987,16 +1021,95 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        async let mercariResult = MercariPriceAPI.fetch(productName: query)
-        async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
-        async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
-        let results = await (mercariResult, yahooResult, rakumaResult)
-        guard generation == searchGeneration else { return }
-        mercari = results.0
-        yahoo = results.1
-        rakuma = results.2
+        if condition == .new {
+            async let amazonResult = NewPriceAPI.fetch(action: "amazonNewPrice", productName: query, barcode: barcode)
+            async let rakutenResult = NewPriceAPI.fetch(action: "rakutenNewPrice", productName: query, barcode: barcode)
+            let results = await (amazonResult, rakutenResult)
+            guard generation == searchGeneration else { return }
+            amazon = results.0
+            rakuten = results.1
+        } else {
+            async let mercariResult = MercariPriceAPI.fetch(productName: query)
+            async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
+            async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
+            let results = await (mercariResult, yahooResult, rakumaResult)
+            guard generation == searchGeneration else { return }
+            mercari = results.0
+            yahoo = results.1
+            rakuma = results.2
+        }
         isLoading = false
         hasSearched = true
+    }
+}
+
+// Only products that match the recognized model are allowed into the price list.
+// Ambiguous accessory and broken/parts listings are hidden rather than presented as cheap units.
+enum BuyerProductFilter {
+    static func normalized(_ value: String) -> String {
+        value.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP"))
+            .lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init).joined()
+    }
+
+    static func isMatching(_ item: YahooPriceItem, query: String, condition: BuyerCondition) -> Bool {
+        let title = item.name.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let state = (item.condition ?? "").folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let queryText = query.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let excluded = ["ケース", "カバー", "フィルム", "保護シート", "ガラス", "充電器", "充電ケーブル", "バッテリー", "空箱", "箱のみ", "本体なし", "付属品のみ", "部品取り", "ジャンク", "故障", "訳あり", "破損", "画面割れ", "スタンド", "ホルダー", "ダミー", "互換", "用アクセサリー", "for ipad", "for iphone", "セット販売", "まとめ売り"]
+        guard !excluded.contains(where: { title.contains($0) || state.contains($0) }) else { return false }
+        if condition == .new {
+            guard !["中古", "used", "開封済", "整備済", "再生品", "リファービッシュ"].contains(where: { title.contains($0) || state.contains($0) }) else { return false }
+        } else {
+            guard !["新品未使用", "新品・未使用", "未開封", "brand new"].contains(where: { state.contains($0) }) else { return false }
+        }
+
+        let compactTitle = normalized(title)
+        let compactQuery = normalized(queryText)
+        // Distinct model codes and storage capacity must match exactly when supplied.
+        let pattern = #"[a-z]+[- ]?\d+[a-z0-9-]*|\d+(?:gb|tb)|第\d+世代"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+            let range = NSRange(queryText.startIndex..., in: queryText)
+            for match in regex.matches(in: queryText, range: range) {
+                guard let swiftRange = Range(match.range, in: queryText) else { continue }
+                let token = normalized(String(queryText[swiftRange]))
+                if token.count >= 3 && !compactTitle.contains(token) { return false }
+            }
+        }
+        let words = queryText.split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
+            .map { normalized(String($0)) }.filter { $0.count >= 3 && !$0.allSatisfy(\.isNumber) }
+        guard !words.isEmpty || !compactQuery.isEmpty else { return false }
+        return words.isEmpty ? compactTitle.contains(compactQuery) : words.contains { compactTitle.contains($0) }
+    }
+}
+
+struct BuyerSourceMark: View {
+    let source: String
+
+    var body: some View {
+        Group {
+            switch source {
+            case "メルカリ": MercariLocalMark()
+            case "Yahoo!": YahooFleamarketLocalMark()
+            case "ラクマ": RakumaLocalMark()
+            case "Amazon":
+                remoteSiteIcon("www.amazon.co.jp", fallback: "Amazon", color: .black)
+            default:
+                remoteSiteIcon("www.rakuten.co.jp", fallback: "楽天", color: .red)
+            }
+        }
+        .frame(width: 35, height: 35)
+        .background(.white, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityLabel(source)
+    }
+
+    private func remoteSiteIcon(_ domain: String, fallback: String, color: Color) -> some View {
+        let iconURL = URL(string: "https://www.google.com/s2/favicons?domain=\(domain)&sz=64")!
+        return AsyncImage(url: iconURL) { image in
+            image.resizable().scaledToFit().padding(5)
+        } placeholder: {
+            Text(fallback).font(.system(size: 8, weight: .bold)).foregroundStyle(color)
+        }
     }
 }
 
@@ -5207,6 +5320,25 @@ struct MarketplaceCard: View {
                 cornerRadius: 18
             )
         )
+    }
+}
+
+enum NewPriceAPI {
+    private static let endpoint = "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
+
+    static func fetch(action: String, productName: String, barcode: String) async -> YahooPriceResponse? {
+        guard let url = URL(string: endpoint),
+              let body = try? JSONSerialization.data(withJSONObject: [
+                "action": action, "productName": productName, "barcode": barcode
+              ]) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        request.timeoutInterval = 20
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, 200...299 ~= http.statusCode else { return nil }
+        return try? JSONDecoder().decode(YahooPriceResponse.self, from: data)
     }
 }
 
