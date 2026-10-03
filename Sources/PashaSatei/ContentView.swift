@@ -1257,21 +1257,20 @@ enum BuyerProductFilter {
         let accessoryWords = ["ケース", "カバー", "フィルム", "保護シート", "充電器", "充電ケーブル", "空箱", "箱のみ", "本体なし", "付属品のみ", "スタンド", "ホルダー", "ダミー", "互換", "交換用バッテリー", "バッテリーのみ", "ガラスのみ"]
         guard !accessoryWords.contains(where: { !queryText.contains($0) && accessoryTitle.contains($0) }) else { return false }
         let damageWords = ["部品取り", "ジャンク", "故障", "破損", "画面割れ", "セット販売", "まとめ売り"]
-        guard !damageWords.contains(where: { !queryText.contains($0) && (title.contains($0) || state.contains($0)) }) else { return false }
+        let damageText = (title + " " + state).replacingOccurrences(of: #"(?:故障|破損|画面割れ)(?:なし|無し|ありません)|ジャンクではありません"#, with: " ", options: .regularExpression)
+        guard !damageWords.contains(where: { !queryText.contains($0) && damageText.contains($0) }) else { return false }
         if condition == .new {
             guard !["中古", "used", "開封済", "整備済", "再生品", "リファービッシュ"].contains(where: { title.contains($0) || state.contains($0) }) else { return false }
-        } else {
-            let usedState = (title + " " + state)
-                .replacingOccurrences(of: "新品同様", with: "")
-                .replacingOccurrences(of: "新品級", with: "")
-            guard !matches(#"新品|未[\s、・]*使用|未開封|brand\s*new|unused"#, in: usedState) else { return false }
         }
-        // Both screens calculate used prices from actual used units only.
+        // Resale comparison includes used, nearly-unused and new listings.
+        if matches(#"arrows|iphone|pixel|galaxy|xperia|aquos|oppo|redmi|f-?\d{2}[a-z]"#, in: queryText),
+           matches(#"ミラクルスフィア|ガンマ|トレカ|トレーディングカード|デュエル|遊戯王"#, in: title) { return false }
         let codes = modelCodes(queryText)
         for code in codes where !exactCode(code, in: title) { return false }
 
         let capacities = tokens(#"(?<![0-9])[0-9]+\s*(?:gb|tb)(?![a-z])"#, in: queryText)
-        for capacity in capacities where !exactCode(capacity, in: title) { return false }
+        let listedCapacities = tokens(#"(?<![0-9])[0-9]+\s*(?:gb|tb)(?![a-z])"#, in: title)
+        if !capacities.isEmpty && !listedCapacities.isEmpty && !capacities.contains(where: { exactCode($0, in: title) }) { return false }
         for generation in tokens(#"第\s*[0-9]+\s*世代"#, in: queryText) {
             guard normalized(title).contains(normalized(generation)) else { return false }
         }
@@ -5998,30 +5997,3 @@ struct CameraPicker:
         }
 
         func imagePickerController(
-            _ picker:
-                UIImagePickerController,
-            didFinishPickingMediaWithInfo info:
-                [
-                    UIImagePickerController
-                        .InfoKey: Any
-                ]
-        ) {
-            guard let image =
-                    info[
-                        .originalImage
-                    ] as? UIImage else {
-                parent.onCancel()
-                return
-            }
-
-            parent.onImage(image)
-        }
-
-        func imagePickerControllerDidCancel(
-            _ picker:
-                UIImagePickerController
-        ) {
-            parent.onCancel()
-        }
-    }
-}
