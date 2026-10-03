@@ -1301,14 +1301,14 @@ enum MarketplaceSearch {
     }
 
     static func merge(_ responses: [YahooPriceResponse], query: String, source: Source) -> YahooPriceResponse? {
-        let successful = responses.filter { $0.ok }
+        let successful: [YahooPriceResponse] = responses.filter { $0.ok }
         guard !successful.isEmpty else { return responses.first }
-        let rawItems = successful.flatMap { $0.items }.sorted {
+        let rawItems: [YahooPriceItem] = successful.flatMap { $0.items }.sorted {
             $0.price == $1.price ? $0.url < $1.url : $0.price < $1.price
         }
         var urls = Set<String>()
         var photos = Set<String>()
-        let items = rawItems.filter { item in
+        let items: [YahooPriceItem] = rawItems.filter { item in
             guard BuyerProductFilter.isMatching(item, query: query, condition: .used),
                   let url = URL(string: item.url), let host = url.host,
                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
@@ -1321,7 +1321,7 @@ enum MarketplaceSearch {
             }
             return true
         }
-        let prices = items.map(\.price)
+        let prices: [Int] = items.map { item in item.price }
         let middle = prices.count / 2
         let median: Int
         if prices.isEmpty { median = 0 }
