@@ -1028,11 +1028,11 @@ struct BuyerDiscoveryView: View {
                             Text("\(listings.count)件 / 最大20件")
                                 .font(.caption.bold()).foregroundStyle(gold)
                         }
-                        Text("各サイトの一致する商品を最大3件ずつ含めて価格順に表示。送料・状態はリンク先で確認してください。")
+                        Text("一致する中古本体を3サイト合算で安い順に表示。送料・状態はリンク先で確認してください。")
                             .font(.caption).foregroundStyle(silver)
                         Text(activeSources.map { "\($0.0) \(sourceStatus($0.0, $0.1))" }.joined(separator: " ・ "))
                             .font(.caption.bold()).foregroundStyle(silver)
-                        if listings.isEmpty {
+                        if listings.isEmpty && !isLoading {
                             Text("本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
                                 .padding(14).background(Color.white.opacity(0.08))
@@ -1161,14 +1161,25 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        async let mercariResult = MarketplaceSearch.fetch(source: .mercari, productName: query)
-        async let yahooResult = MarketplaceSearch.fetch(source: .yahoo, productName: query, barcode: barcode)
-        async let rakumaResult = MarketplaceSearch.fetch(source: .rakuma, productName: query)
-        let results = await (mercariResult, yahooResult, rakumaResult)
+        let searchBarcode = barcode
+        await withTaskGroup(of: (MarketplaceSearch.Source, YahooPriceResponse?).self) { group in
+            for source in [MarketplaceSearch.Source.mercari, .yahoo, .rakuma] {
+                group.addTask {
+                    let result = await MarketplaceSearch.fetch(source: source, productName: query, barcode: searchBarcode)
+                    return (source, result)
+                }
+            }
+            for await (source, result) in group {
+                guard generation == searchGeneration else { continue }
+                switch source {
+                case .mercari: mercari = result
+                case .yahoo: yahoo = result
+                case .rakuma: rakuma = result
+                }
+                hasSearched = true
+            }
+        }
         guard generation == searchGeneration else { return }
-        mercari = results.0
-        yahoo = results.1
-        rakuma = results.2
         isLoading = false
         hasSearched = true
     }
@@ -1249,9 +1260,13 @@ enum BuyerProductFilter {
         guard !damageWords.contains(where: { !queryText.contains($0) && (title.contains($0) || state.contains($0)) }) else { return false }
         if condition == .new {
             guard !["中古", "used", "開封済", "整備済", "再生品", "リファービッシュ"].contains(where: { title.contains($0) || state.contains($0) }) else { return false }
+        } else {
+            let usedState = (title + " " + state)
+                .replacingOccurrences(of: "新品同様", with: "")
+                .replacingOccurrences(of: "新品級", with: "")
+            guard !matches(#"新品|未[\s、・]*使用|未開封|brand\s*new|unused"#, in: usedState) else { return false }
         }
-        // Used-market results may include unused resale units, consistently in
-        // both screens. Condition is kept on the item; do not silently drop them.
+        // Both screens calculate used prices from actual used units only.
         let codes = modelCodes(queryText)
         for code in codes where !exactCode(code, in: title) { return false }
 
@@ -1290,14 +1305,14 @@ enum MarketplaceSearch {
 
     static func candidates(for query: String) -> [String] {
         let simplified = BuyerProductFilter.simplified(query)
-        let codes = BuyerProductFilter.modelCodes(simplified)
         var values: [String] = []
-        // Search by the name without carrier/color/condition, then by model.
-        for value in [simplified, codes.first ?? "", query.trimmingCharacters(in: .whitespacesAndNewlines)] {
+        // One request per marketplace. The server combines price-ascending and
+        // relevance results; repeating three searches here tripled server work.
+        for value in [simplified.isEmpty ? query.trimmingCharacters(in: .whitespacesAndNewlines) : simplified] {
             guard !value.isEmpty, !values.contains(where: { BuyerProductFilter.folded($0) == BuyerProductFilter.folded(value) }) else { continue }
             values.append(value)
         }
-        return Array(values.prefix(3))
+        return values
     }
 
     static func merge(_ responses: [YahooPriceResponse], query: String, source: Source) -> YahooPriceResponse? {
@@ -3321,19 +3336,11 @@ struct CompareView: View {
         .onChange(of: salePrices) { _ in persistPriceFields() }
         .onChange(of: shippingCosts) { _ in persistPriceFields() }
         .task(id: productName) {
-            // First load after a build/cold start can be slower.
-            // Load the two fast marketplaces first, then Rakuma.
-            // This prevents the heavier Rakuma request from competing with
-            // Mercari/Yahoo on the very first comparison screen.
+            // Each marketplace updates its own card as soon as it completes.
             async let mercariTask: Void = loadMercariPrice()
             async let yahooTask: Void = loadYahooPrice()
-
-            _ = await (
-                mercariTask,
-                yahooTask
-            )
-
-            await loadRakumaPrice()
+            async let rakumaTask: Void = loadRakumaPrice()
+            _ = await (mercariTask, yahooTask, rakumaTask)
         }
     }
 
@@ -5408,7 +5415,7 @@ enum RakumaPriceAPI {
             forHTTPHeaderField: "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 35
+        request.timeoutInterval = 16
 
         do {
             let (data, response) = try await URLSession.shared.data(
@@ -5459,7 +5466,7 @@ enum MercariPriceAPI {
             forHTTPHeaderField: "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 20
+        request.timeoutInterval = 16
 
         do {
             let (data, response) = try await URLSession.shared.data(
@@ -5521,7 +5528,7 @@ enum YahooPriceAPI {
                 "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 20
+        request.timeoutInterval = 16
 
         do {
             let (data, response) =
