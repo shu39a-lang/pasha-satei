@@ -1046,7 +1046,7 @@ struct BuyerDiscoveryView: View {
                             .font(.caption).foregroundStyle(silver)
                         Text(activeSources.map { "\($0.0) \(sourceStatus($0.0, $0.1))" }.joined(separator: " ・ "))
                             .font(.caption.bold()).foregroundStyle(silver)
-                        if listings.isEmpty {
+                        if listings.isEmpty && !isLoading {
                             Text("本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
                                 .padding(14).background(Color.white.opacity(0.08))
@@ -1175,14 +1175,25 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        async let mercariResult = MercariPriceAPI.fetch(productName: query)
-        async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
-        async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
-        let results = await (mercariResult, yahooResult, rakumaResult)
+        let searchBarcode = barcode
+        await withTaskGroup(of: (Int, YahooPriceResponse?).self) { group in
+            group.addTask { (0, await MercariPriceAPI.fetch(productName: query)) }
+            group.addTask { (1, await YahooPriceAPI.fetch(productName: query, barcode: searchBarcode)) }
+            group.addTask { (2, await RakumaPriceAPI.fetch(productName: query)) }
+            for await (source, response) in group {
+                guard generation == searchGeneration, !Task.isCancelled else {
+                    group.cancelAll()
+                    return
+                }
+                switch source {
+                case 0: mercari = response
+                case 1: yahoo = response
+                default: rakuma = response
+                }
+                hasSearched = true
+            }
+        }
         guard generation == searchGeneration else { return }
-        mercari = results.0
-        yahoo = results.1
-        rakuma = results.2
         isLoading = false
         hasSearched = true
     }
@@ -3170,19 +3181,11 @@ struct CompareView: View {
         .onChange(of: salePrices) { _ in persistPriceFields() }
         .onChange(of: shippingCosts) { _ in persistPriceFields() }
         .task(id: productName) {
-            // First load after a build/cold start can be slower.
-            // Load the two fast marketplaces first, then Rakuma.
-            // This prevents the heavier Rakuma request from competing with
-            // Mercari/Yahoo on the very first comparison screen.
+            // Each marketplace publishes independently; no slow-site barrier.
             async let mercariTask: Void = loadMercariPrice()
             async let yahooTask: Void = loadYahooPrice()
-
-            _ = await (
-                mercariTask,
-                yahooTask
-            )
-
-            await loadRakumaPrice()
+            async let rakumaTask: Void = loadRakumaPrice()
+            _ = await (mercariTask, yahooTask, rakumaTask)
         }
     }
 
@@ -3357,7 +3360,8 @@ struct CompareView: View {
 
         var bestResult: YahooPriceResponse?
 
-        for query in candidates {
+        for query in candidates.prefix(2) {
+            guard !Task.isCancelled else { break }
             let result =
                 await MercariPriceAPI.fetch(
                     productName: query
@@ -3368,33 +3372,12 @@ struct CompareView: View {
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
+                    mercariPrice = result
                 }
 
                 // Enough body listings were found. Avoid unnecessary extra calls.
-                if result.count >= 8 {
+                if result.count > 0 {
                     break
-                }
-            }
-        }
-
-        // A first request can hit a freshly started Cloud Run instance.
-        // Retry once automatically instead of making the user go back and
-        // select another candidate to warm the service.
-        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
-            try? await Task.sleep(
-                nanoseconds: 800_000_000
-            )
-
-            if let retryQuery = candidates.first {
-                let retry =
-                    await MercariPriceAPI.fetch(
-                        productName: retryQuery
-                    )
-
-                if let retry,
-                   retry.ok,
-                   retry.count > (bestResult?.count ?? 0) {
-                    bestResult = retry
                 }
             }
         }
@@ -3441,7 +3424,8 @@ struct CompareView: View {
 
         var bestResult: YahooPriceResponse?
 
-        for query in queries {
+        for query in queries.prefix(2) {
+            guard !Task.isCancelled else { break }
             let result =
                 await YahooPriceAPI.fetch(
                     productName: query,
@@ -3453,35 +3437,15 @@ struct CompareView: View {
                 if bestResult == nil
                     || result.count > (bestResult?.count ?? 0) {
                     bestResult = result
+                    yahooPrice = result
                 }
 
-                if result.count >= 8 {
+                if result.count > 0 {
                     break
                 }
             }
         }
 
-        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
-            try? await Task.sleep(
-                nanoseconds: 800_000_000
-            )
-
-            let retryQuery =
-                queries.first
-                ?? productName
-
-            let retry =
-                await YahooPriceAPI.fetch(
-                    productName: retryQuery,
-                    barcode: barcode
-                )
-
-            if let retry,
-               retry.ok,
-               retry.count > (bestResult?.count ?? 0) {
-                bestResult = retry
-            }
-        }
 
         yahooPrice = bestResult
 
@@ -3515,58 +3479,16 @@ struct CompareView: View {
         isLoadingRakuma = true
         rakumaError = ""
 
-        // Rakuma is slower than the other services, so search the stable
-        // candidate names in parallel and keep the result with the most hits.
-        let results =
-            await withTaskGroup(
-                of: YahooPriceResponse?.self
-            ) { group in
-                for query in candidates {
-                    group.addTask {
-                        await RakumaPriceAPI.fetch(
-                            productName: query
-                        )
-                    }
+        var bestResult: YahooPriceResponse?
+        for query in candidates.prefix(2) {
+            guard !Task.isCancelled else { break }
+            let result = await RakumaPriceAPI.fetch(productName: query)
+            if let result, result.ok {
+                if bestResult == nil || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                    rakumaPrice = result
                 }
-
-                var collected:
-                    [YahooPriceResponse] = []
-
-                for await result in group {
-                    if let result,
-                       result.ok {
-                        collected.append(result)
-                    }
-                }
-
-                return collected
-            }
-
-        var bestResult =
-            results.max {
-                $0.count < $1.count
-            }
-
-        // One automatic retry only when all parallel searches returned zero.
-        if bestResult == nil
-            || (bestResult?.count ?? 0) == 0 {
-
-            try? await Task.sleep(
-                nanoseconds: 500_000_000
-            )
-
-            if let retryQuery =
-                candidates.first {
-
-                let retry =
-                    await RakumaPriceAPI.fetch(
-                        productName: retryQuery
-                    )
-
-                if let retry,
-                   retry.ok {
-                    bestResult = retry
-                }
+                if result.count > 0 { break }
             }
         }
 
@@ -4484,6 +4406,10 @@ struct ListingPreparationCard: View {
     @State private var draftBody = ""
     @State private var statusMessage = ""
     @State private var checkedPhotos: Set<String> = []
+    @State private var isSavingPhotos = false
+    @State private var showPhotoSaveAlert = false
+    @State private var photoSaveMessage = ""
+    @State private var needsPhotoSettings = false
 
     private let photoChecks = ["正面", "裏面", "側面", "型番", "傷・汚れ", "付属品"]
 
@@ -4610,7 +4536,7 @@ struct ListingPreparationCard: View {
                 Button {
                     Task { await savePhotosToLibrary() }
                 } label: {
-                    Label("写真アプリに保存（\(allPhotos.count)枚）", systemImage: "square.and.arrow.down")
+                    Label(isSavingPhotos ? "写真を保存しています…" : "写真アプリに保存（\(allPhotos.count)枚）", systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(blue)
@@ -4619,6 +4545,13 @@ struct ListingPreparationCard: View {
                 }
                 .font(.caption.bold())
                 .buttonStyle(.plain)
+                .disabled(isSavingPhotos || allPhotos.isEmpty)
+                if isSavingPhotos {
+                    ProgressView("写真を保存しています…").tint(green)
+                } else if !photoSaveMessage.isEmpty {
+                    Text(photoSaveMessage)
+                        .font(.caption).foregroundStyle(green)
+                }
             }
 
             Divider()
@@ -4712,6 +4645,18 @@ struct ListingPreparationCard: View {
             Text("メルカリでは保存した写真を使ってAI出品サポートを利用できます。他の販売サイトでは、必要な項目を記入して文章を貼り付けてください。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        }
+        .alert("写真アプリへの保存", isPresented: $showPhotoSaveAlert) {
+            if needsPhotoSettings {
+                Button("設定を開く") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+            Button("閉じる", role: .cancel) {}
+        } message: {
+            Text(photoSaveMessage)
         }
         .onAppear(perform: restoreDraft)
         .onChange(of: draftBody) { _ in persistDraft() }
@@ -4818,31 +4763,58 @@ struct ListingPreparationCard: View {
 
     @MainActor
     private func savePhotosToLibrary() async {
+        guard !isSavingPhotos else { return }
+        isSavingPhotos = true
+        needsPhotoSettings = false
+        photoSaveMessage = ""
+        defer {
+            isSavingPhotos = false
+            statusMessage = photoSaveMessage
+            showPhotoSaveAlert = true
+        }
         let photos = allPhotos
-        guard !photos.isEmpty else { return }
-
-        guard Bundle.main.object(
+        guard !photos.isEmpty else {
+            photoSaveMessage = "保存する写真がありません。写真を追加してください。"
+            return
+        }
+        guard let description = Bundle.main.object(
             forInfoDictionaryKey: "NSPhotoLibraryAddUsageDescription"
-        ) != nil else {
-            statusMessage = "写真の保存設定がありません。アプリの設定を確認してください。"
+        ) as? String, !description.isEmpty else {
+            photoSaveMessage = "写真保存の設定が不足しています。最新版に更新してください。"
             return
         }
-
-        let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        var permission = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        if permission == .notDetermined {
+            permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        }
         guard permission == .authorized || permission == .limited else {
-            statusMessage = "写真への保存を許可してください"
+            needsPhotoSettings = permission == .denied
+            photoSaveMessage = permission == .restricted
+                ? "端末の制限により写真を保存できません。"
+                : "写真への保存が許可されていません。「設定を開く」から写真の追加を許可してください。"
             return
         }
-
+        // Prepare JPEG resources outside the Photos change block and UI thread.
+        let resources: [Data] = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: photos.compactMap { $0.jpegData(compressionQuality: 0.95) })
+            }
+        }
+        guard resources.count == photos.count else {
+            photoSaveMessage = "写真の変換に失敗しました。写真を撮り直して再度保存してください。"
+            return
+        }
         do {
             try await PHPhotoLibrary.shared().performChanges {
-                for photo in photos {
-                    PHAssetChangeRequest.creationRequestForAsset(from: photo)
+                for data in resources {
+                    let request = PHAssetCreationRequest.forAsset()
+                    request.creationDate = Date()
+                    request.addResource(with: .photo, data: data, options: nil)
                 }
             }
-            statusMessage = "\(photos.count)枚を写真アプリに保存しました"
+            photoSaveMessage = "\(resources.count)枚を写真アプリに保存しました。「最近保存した項目」で確認できます。"
         } catch {
-            statusMessage = "写真を保存できませんでした"
+            photoSaveMessage = "写真を保存できませんでした。\(error.localizedDescription)"
         }
     }
 }
@@ -5653,11 +5625,11 @@ enum GeminiProductAPI {
         "https://pasha-satei-vision-api-500716860725.asia-northeast1.run.app"
 
     // Uploading the original iPhone photo can be several MB.
-    // A 1600 px long edge preserves logos/model text well enough for Gemini
+    // A 1280 px long edge preserves logos/model text well enough for Gemini
     // while greatly reducing JPEG/Base64 upload time.
     private static func preparedImage(
         _ image: UIImage,
-        maxEdge: CGFloat = 1600
+        maxEdge: CGFloat = 1280
     ) -> UIImage {
         let size = image.size
         let longest = max(size.width, size.height)
@@ -5742,49 +5714,26 @@ enum GeminiProductAPI {
             return nil
         }
 
-        let uploadImage =
-            preparedImage(image)
-
-        let focusedImage =
-            preparedImage(
-                centerCrop(image),
-                maxEdge: 1200
-            )
-
-        guard let imageData =
-                uploadImage.jpegData(
-                    compressionQuality: 0.72
-                ),
-              let focusedImageData =
-                focusedImage.jpegData(
-                    compressionQuality: 0.65
-                ) else {
-            return nil
+        // Resize/encode both images off the UI thread before uploading.
+        let jsonData: Data? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let uploadImage = preparedImage(image)
+                let focusedImage = preparedImage(centerCrop(image), maxEdge: 960)
+                guard let imageData = uploadImage.jpegData(compressionQuality: 0.68),
+                      let focusedData = focusedImage.jpegData(compressionQuality: 0.65) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let body: [String: Any] = [
+                    "imageBase64": imageData.base64EncodedString(),
+                    "focusedImageBase64": focusedData.base64EncodedString(),
+                    "ocrText": String(ocrText.prefix(1200)),
+                    "barcode": barcode
+                ]
+                continuation.resume(returning: try? JSONSerialization.data(withJSONObject: body))
+            }
         }
-
-        // Limit OCR text sent to the server so accidental long OCR output
-        // cannot inflate the request or distract product identification.
-        let compactOCR =
-            String(ocrText.prefix(1200))
-
-        let body: [String: Any] = [
-            "imageBase64":
-                imageData
-                    .base64EncodedString(),
-            "focusedImageBase64":
-                focusedImageData
-                    .base64EncodedString(),
-            "ocrText": compactOCR,
-            "barcode": barcode
-        ]
-
-        guard let jsonData =
-                try? JSONSerialization
-                    .data(
-                        withJSONObject: body
-                    ) else {
-            return nil
-        }
+        guard let jsonData else { return nil }
 
         var request =
             URLRequest(url: url)
@@ -6114,3 +6063,4 @@ struct CameraPicker:
         }
     }
 }
+
