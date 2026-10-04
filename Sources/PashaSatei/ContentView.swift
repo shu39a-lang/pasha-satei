@@ -936,6 +936,7 @@ struct BuyerDiscoveryView: View {
 
         var seenURLs = Set<String>()
         var seenPhotos = Set<String>()
+        var seenTitles = Set<String>()
         return candidates.filter { listing in
             let urlKey = (listing.url.host?.lowercased() ?? "") + listing.url.path
             guard seenURLs.insert(urlKey).inserted else { return false }
@@ -944,12 +945,25 @@ struct BuyerDiscoveryView: View {
                 let key = "\(listing.source)|\(listing.item.price)|\(host.lowercased())|\(imageURL.path)"
                 guard seenPhotos.insert(key).inserted else { return false }
             }
+            let name = BuyerProductFilter.normalized(listing.item.name)
+            if name.count >= 8 {
+                let key = "\(listing.source)|\(listing.item.price)|\(name)"
+                guard seenTitles.insert(key).inserted else { return false }
+            }
             return true
         }
     }
 
     private var listings: [BuyerListing] {
-        Array(uniqueListings.prefix(20))
+        let sorted = uniqueListings
+        let reserved = activeSources.flatMap { sourceInfo in
+            let source = sourceInfo.0
+            return Array(sorted.filter { $0.source == source }.prefix(3))
+        }
+        let reservedIDs = Set(reserved.map(\.id))
+        let remainder = sorted.filter { !reservedIDs.contains($0.id) }
+        return (reserved + Array(remainder.prefix(max(0, 20 - reserved.count))))
+            .sorted { $0.item.price < $1.item.price }
     }
 
     private func sourceStatus(_ source: String, _ response: YahooPriceResponse?) -> String {
@@ -1028,11 +1042,11 @@ struct BuyerDiscoveryView: View {
                             Text("\(listings.count)件 / 最大20件")
                                 .font(.caption.bold()).foregroundStyle(gold)
                         }
-                        Text("一致する中古本体を3サイト合算で安い順に表示。送料・状態はリンク先で確認してください。")
+                        Text("各サイトの一致する商品を最大3件ずつ含めて価格順に表示。送料・状態はリンク先で確認してください。")
                             .font(.caption).foregroundStyle(silver)
                         Text(activeSources.map { "\($0.0) \(sourceStatus($0.0, $0.1))" }.joined(separator: " ・ "))
                             .font(.caption.bold()).foregroundStyle(silver)
-                        if listings.isEmpty && !isLoading {
+                        if listings.isEmpty {
                             Text("本体に一致する商品が見つかりませんでした。商品名や型番を直して再検索してください。")
                                 .font(.subheadline).foregroundStyle(silver)
                                 .padding(14).background(Color.white.opacity(0.08))
@@ -1161,235 +1175,56 @@ struct BuyerDiscoveryView: View {
         mercari = nil
         yahoo = nil
         rakuma = nil
-        let searchBarcode = barcode
-        await withTaskGroup(of: (MarketplaceSearch.Source, YahooPriceResponse?).self) { group in
-            for source in [MarketplaceSearch.Source.mercari, .yahoo, .rakuma] {
-                group.addTask {
-                    let result = await MarketplaceSearch.fetch(source: source, productName: query, barcode: searchBarcode)
-                    return (source, result)
-                }
-            }
-            for await (source, result) in group {
-                guard generation == searchGeneration else { continue }
-                switch source {
-                case .mercari: mercari = result
-                case .yahoo: yahoo = result
-                case .rakuma: rakuma = result
-                }
-                hasSearched = true
-            }
-        }
+        async let mercariResult = MercariPriceAPI.fetch(productName: query)
+        async let yahooResult = YahooPriceAPI.fetch(productName: query, barcode: barcode)
+        async let rakumaResult = RakumaPriceAPI.fetch(productName: query)
+        let results = await (mercariResult, yahooResult, rakumaResult)
         guard generation == searchGeneration else { return }
+        mercari = results.0
+        yahoo = results.1
+        rakuma = results.2
         isLoading = false
         hasSearched = true
     }
 }
 
-// Shared by comparison and buyer search. Do not accept a model as a substring
-// of another model (F-51B is different from HRF-51B and F-51B2).
+// Only products that match the recognized model are allowed into the price list.
+// Ambiguous accessory and broken/parts listings are hidden rather than presented as cheap units.
 enum BuyerProductFilter {
-    static func folded(_ value: String) -> String {
-        var text = value.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP"))
-            .lowercased()
-            .replacingOccurrences(of: "[‐‑‒–—−]", with: "-", options: .regularExpression)
-        if text.contains("iphone") || text.contains("ipad") {
-            text = text.replacingOccurrences(of: #"(iphone|ipad)(\s*[0-9]+)(pro|max|mini|plus|air)"#,
-                with: "$1$2 $3", options: .regularExpression)
-            text = text.replacingOccurrences(of: "promax", with: "pro max")
-        }
-        return text
-    }
-
     static func normalized(_ value: String) -> String {
-        folded(value).unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+        value.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP"))
+            .lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
             .map(String.init).joined()
     }
 
-    static func matches(_ pattern: String, in text: String) -> Bool {
-        text.range(of: pattern, options: .regularExpression) != nil
-    }
-
-    static func tokens(_ pattern: String, in text: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
-            guard let range = Range($0.range, in: text) else { return nil }
-            return String(text[range])
-        }
-    }
-
-    static func modelCodes(_ value: String) -> [String] {
-        let pattern = #"(?<![a-z0-9])[a-z]{1,12}[-\s]*[0-9]+[a-z0-9]*(?:-[a-z0-9]+)*(?![a-z0-9])"#
-        return tokens(pattern, in: folded(value)).filter {
-            !matches(#"^(?:[0-9]+\s*(?:gb|tb)|sim\s*[0-9]+)$"#, in: $0)
-        }
-    }
-
-    static func exactCode(_ code: String, in title: String) -> Bool {
-        let chars = normalized(code).map { NSRegularExpression.escapedPattern(for: String($0)) }
-        let pattern = "(?<![a-z0-9])" + chars.joined(separator: #"[-\s]*"#) + "(?![a-z0-9])"
-        return matches(pattern, in: folded(title))
-    }
-
-    static func simplified(_ query: String) -> String {
-        var value = folded(query)
-        // These describe an individual listing, not the product identity.
-        let words = ["simロック解除済み", "simフリー", "新品未使用", "新品", "未使用", "中古", "美品", "良品", "本体のみ", "送料無料", "ホワイト", "ブラック", "ネイビー", "シルバー", "ゴールド", "docomo", "softbank", "楽天モバイル", "ワイモバイル"]
-        for word in words { value = value.replacingOccurrences(of: word, with: " ") }
-        value = value.replacingOccurrences(of: #"(?<![a-z0-9])(?:au|uq|used|white|black|navy)(?![a-z0-9])"#, with: " ", options: .regularExpression)
-        return value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-    }
-
     static func isMatching(_ item: YahooPriceItem, query: String, condition: BuyerCondition) -> Bool {
-        let title = folded(item.name)
-        let state = folded(item.condition ?? "")
-        let queryText = folded(query)
-        guard item.price > 0, !title.isEmpty else { return false }
-        // A sold listing cannot contribute to a currently available price.
-        guard !matches(#"sold\s*out|売り切れ|売却済|販売終了|取引終了"#, in: state + " " + title) else { return false }
-
-        // Preserve actual units described as 'ケース付き' or 'バッテリー良好'.
-        var accessoryTitle = title
-        for pattern in [#"(?:ケース|カバー|フィルム|充電器|充電ケーブル|箱|付属品)(?:付き|付属|付)(?:あり)?"#,
-                        #"(?:ケース|カバー|フィルム|充電器|箱|付属品)(?:なし|無し|欠品)"#,
-                        #"バッテリー(?:良好|正常|交換済み?|容量|最大容量|\s*[0-9]+\s*%)"#] {
-            accessoryTitle = accessoryTitle.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
-        }
-        let accessoryWords = ["ケース", "カバー", "フィルム", "保護シート", "充電器", "充電ケーブル", "空箱", "箱のみ", "本体なし", "付属品のみ", "スタンド", "ホルダー", "ダミー", "互換", "交換用バッテリー", "バッテリーのみ", "ガラスのみ"]
-        guard !accessoryWords.contains(where: { !queryText.contains($0) && accessoryTitle.contains($0) }) else { return false }
-        let damageWords = ["部品取り", "ジャンク", "故障", "破損", "画面割れ", "セット販売", "まとめ売り"]
-        let damageText = (title + " " + state).replacingOccurrences(of: #"(?:故障|破損|画面割れ)(?:なし|無し|ありません)|ジャンクではありません"#, with: " ", options: .regularExpression)
-        guard !damageWords.contains(where: { !queryText.contains($0) && damageText.contains($0) }) else { return false }
+        let title = item.name.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let state = (item.condition ?? "").folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let queryText = query.folding(options: [.widthInsensitive, .caseInsensitive], locale: Locale(identifier: "ja_JP")).lowercased()
+        let excluded = ["ケース", "カバー", "フィルム", "保護シート", "ガラス", "充電器", "充電ケーブル", "バッテリー", "空箱", "箱のみ", "本体なし", "付属品のみ", "部品取り", "ジャンク", "故障", "訳あり", "破損", "画面割れ", "スタンド", "ホルダー", "ダミー", "互換", "用アクセサリー", "for ipad", "for iphone", "セット販売", "まとめ売り"]
+        guard !excluded.contains(where: { title.contains($0) || state.contains($0) }) else { return false }
         if condition == .new {
             guard !["中古", "used", "開封済", "整備済", "再生品", "リファービッシュ"].contains(where: { title.contains($0) || state.contains($0) }) else { return false }
-        }
-        // Resale comparison includes used, nearly-unused and new listings.
-        if matches(#"arrows|iphone|pixel|galaxy|xperia|aquos|oppo|redmi|f-?\d{2}[a-z]"#, in: queryText),
-           matches(#"ミラクルスフィア|ガンマ|トレカ|トレーディングカード|デュエル|遊戯王"#, in: title) { return false }
-        let codes = modelCodes(queryText)
-        for code in codes where !exactCode(code, in: title) { return false }
-
-        let capacities = tokens(#"(?<![0-9])[0-9]+\s*(?:gb|tb)(?![a-z])"#, in: queryText)
-        let listedCapacities = tokens(#"(?<![0-9])[0-9]+\s*(?:gb|tb)(?![a-z])"#, in: title)
-        if !capacities.isEmpty && !listedCapacities.isEmpty && !capacities.contains(where: { exactCode($0, in: title) }) { return false }
-        for generation in tokens(#"第\s*[0-9]+\s*世代"#, in: queryText) {
-            guard normalized(title).contains(normalized(generation)) else { return false }
+        } else {
+            guard !["新品未使用", "新品・未使用", "未開封", "brand new"].contains(where: { state.contains($0) }) else { return false }
         }
 
-        // Family variants cannot be treated as the same iPhone/iPad model.
-        if queryText.contains("iphone") || queryText.contains("ipad") {
-            for variant in ["pro", "max", "mini", "plus", "air"] {
-                let pattern = "(?<![a-z])" + variant + "(?![a-z])"
-                if matches(pattern, in: queryText) != matches(pattern, in: title) { return false }
-            }
-        }
-        if !codes.isEmpty { return true }
-        let words = simplified(queryText).split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
-            .map { normalized(String($0)) }.filter { !$0.isEmpty }
-        guard !words.isEmpty else { return false }
         let compactTitle = normalized(title)
-        return words.allSatisfy { compactTitle.contains($0) }
-    }
-}
-
-// Keep every relevant item from every query instead of picking the response
-// with the largest count. The original endpoint actions are unchanged.
-enum MarketplaceSearch {
-    enum Source: String, Sendable { case mercari, yahoo, rakuma }
-
-    static func identity(productName: String, modelNumber: String = "") -> String {
-        let model = modelNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !model.isEmpty, !BuyerProductFilter.exactCode(model, in: productName) else { return productName }
-        return productName + " " + model
-    }
-
-    static func candidates(for query: String) -> [String] {
-        let simplified = BuyerProductFilter.simplified(query)
-        var values: [String] = []
-        // One request per marketplace. The server combines price-ascending and
-        // relevance results; repeating three searches here tripled server work.
-        for value in [simplified.isEmpty ? query.trimmingCharacters(in: .whitespacesAndNewlines) : simplified] {
-            guard !value.isEmpty, !values.contains(where: { BuyerProductFilter.folded($0) == BuyerProductFilter.folded(value) }) else { continue }
-            values.append(value)
-        }
-        return values
-    }
-
-    static func merge(_ responses: [YahooPriceResponse], query: String, source: Source) -> YahooPriceResponse? {
-        let successful: [YahooPriceResponse] = responses.filter { $0.ok }
-        guard !successful.isEmpty else { return responses.first }
-        let rawItems: [YahooPriceItem] = successful.flatMap { $0.items }.sorted {
-            $0.price == $1.price ? $0.url < $1.url : $0.price < $1.price
-        }
-        var urls = Set<String>()
-        var photos = Set<String>()
-        let items: [YahooPriceItem] = rawItems.filter { item in
-            guard BuyerProductFilter.isMatching(item, query: query, condition: .used),
-                  let url = URL(string: item.url), let host = url.host,
-                  ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
-            // Tracking parameters must not turn the same listing into duplicates.
-            let urlKey = host.lowercased() + url.path
-            guard urls.insert(urlKey).inserted else { return false }
-            if let image = item.imageUrl, let imageURL = URL(string: image), let imageHost = imageURL.host {
-                let photoKey = imageHost.lowercased() + imageURL.path + "|" + String(item.price)
-                guard photos.insert(photoKey).inserted else { return false }
-            }
-            return true
-        }
-        let prices: [Int] = items.map { item in item.price }
-        let middle = prices.count / 2
-        let median: Int
-        if prices.isEmpty { median = 0 }
-        else if prices.count % 2 == 1 { median = prices[middle] }
-        else { median = prices[middle - 1] + (prices[middle] - prices[middle - 1]) / 2 }
-        return YahooPriceResponse(ok: true, source: successful.first?.source ?? source.rawValue,
-            query: query, count: items.count, minPrice: prices.first ?? 0,
-            medianPrice: median, maxPrice: prices.last ?? 0, items: items, error: nil)
-    }
-
-    static func fetch(source: Source, productName: String, barcode: String = "", modelNumber: String = "") async -> YahooPriceResponse? {
-        let query = identity(productName: productName, modelNumber: modelNumber)
-        let queries = candidates(for: query)
-        guard !queries.isEmpty else { return nil }
-        let responses = await withTaskGroup(of: YahooPriceResponse?.self) { group in
-            for candidate in queries {
-                group.addTask {
-                    await MarketplaceSearchCache.shared.fetch(source: source, query: candidate, barcode: barcode)
-                }
-            }
-            var results: [YahooPriceResponse] = []
-            for await result in group { if let result { results.append(result) } }
-            return results
-        }
-        return merge(responses, query: query, source: source)
-    }
-}
-
-// Both screens reuse the same recent requests and share in-flight searches.
-// This cache never persists prices; it expires after 45 seconds.
-actor MarketplaceSearchCache {
-    static let shared = MarketplaceSearchCache()
-    private struct Entry { let date: Date; let response: YahooPriceResponse }
-    private var entries: [String: Entry] = [:]
-    private var pending: [String: Task<YahooPriceResponse?, Never>] = [:]
-
-    func fetch(source: MarketplaceSearch.Source, query: String, barcode: String) async -> YahooPriceResponse? {
-        let key = source.rawValue + "|" + BuyerProductFilter.folded(query) + "|" + (source == .yahoo ? barcode : "")
-        let now = Date()
-        entries = entries.filter { now.timeIntervalSince($0.value.date) < 45 }
-        if let entry = entries[key] { return entry.response }
-        if let task = pending[key] { return await task.value }
-        let task = Task<YahooPriceResponse?, Never> {
-            switch source {
-            case .mercari: return await MercariPriceAPI.fetch(productName: query)
-            case .yahoo: return await YahooPriceAPI.fetch(productName: query, barcode: barcode)
-            case .rakuma: return await RakumaPriceAPI.fetch(productName: query)
+        let compactQuery = normalized(queryText)
+        // Distinct model codes and storage capacity must match exactly when supplied.
+        let pattern = #"[a-z]+[- ]?\d+[a-z0-9-]*|\d+(?:gb|tb)|第\d+世代"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+            let range = NSRange(queryText.startIndex..., in: queryText)
+            for match in regex.matches(in: queryText, range: range) {
+                guard let swiftRange = Range(match.range, in: queryText) else { continue }
+                let token = normalized(String(queryText[swiftRange]))
+                if token.count >= 3 && !compactTitle.contains(token) { return false }
             }
         }
-        pending[key] = task
-        let result = await task.value
-        pending[key] = nil
-        if let result, result.ok { entries[key] = Entry(date: Date(), response: result) }
-        return result
+        let words = queryText.split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
+            .map { normalized(String($0)) }.filter { $0.count >= 3 && !$0.allSatisfy(\.isNumber) }
+        guard !words.isEmpty || !compactQuery.isEmpty else { return false }
+        return words.isEmpty ? compactTitle.contains(compactQuery) : words.contains { compactTitle.contains($0) }
     }
 }
 
@@ -3335,11 +3170,19 @@ struct CompareView: View {
         .onChange(of: salePrices) { _ in persistPriceFields() }
         .onChange(of: shippingCosts) { _ in persistPriceFields() }
         .task(id: productName) {
-            // Each marketplace updates its own card as soon as it completes.
+            // First load after a build/cold start can be slower.
+            // Load the two fast marketplaces first, then Rakuma.
+            // This prevents the heavier Rakuma request from competing with
+            // Mercari/Yahoo on the very first comparison screen.
             async let mercariTask: Void = loadMercariPrice()
             async let yahooTask: Void = loadYahooPrice()
-            async let rakumaTask: Void = loadRakumaPrice()
-            _ = await (mercariTask, yahooTask, rakumaTask)
+
+            _ = await (
+                mercariTask,
+                yahooTask
+            )
+
+            await loadRakumaPrice()
         }
     }
 
@@ -3408,42 +3251,339 @@ struct CompareView: View {
         return "買取店"
     }
 
+    private var stableSearchCandidates: [String] {
+        var values: [String] = []
+
+        func add(_ raw: String) {
+            let value =
+                raw.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+
+            guard !value.isEmpty,
+                  !values.contains(value) else {
+                return
+            }
+
+            values.append(value)
+        }
+
+        // Most stable key: brand + model number.
+        if !modelNumber
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .isEmpty {
+
+            let brandModel =
+                [
+                    brand,
+                    modelNumber
+                ]
+                .map {
+                    $0.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+
+            add(brandModel)
+            add(modelNumber)
+        }
+
+        // Keep the recognized display/product name as a fallback.
+        add(productName)
+
+        // Last fallback: remove common condition/carrier words that can
+        // make marketplace searches unnecessarily narrow.
+        var simplified = productName
+
+        let removableWords = [
+            "新品未使用",
+            "新品",
+            "未使用",
+            "中古",
+            "美品",
+            "ジャンク",
+            "SIMフリー",
+            "SIMロック解除済み",
+            "docomo",
+            "au",
+            "SoftBank",
+            "softbank",
+            "楽天モバイル",
+            "ワイモバイル",
+            "Y!mobile",
+            "UQ",
+            "本体のみ",
+            "送料無料"
+        ]
+
+        for word in removableWords {
+            simplified =
+                simplified.replacingOccurrences(
+                    of: word,
+                    with: "",
+                    options: [.caseInsensitive]
+                )
+        }
+
+        simplified =
+            simplified
+                .split(
+                    whereSeparator: {
+                        $0.isWhitespace
+                    }
+                )
+                .joined(separator: " ")
+
+        add(simplified)
+
+        return Array(values.prefix(4))
+    }
+
     @MainActor
     private func loadMercariPrice() async {
-        guard !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let candidates =
+            stableSearchCandidates
+
+        guard !candidates.isEmpty else {
+            return
+        }
+
         isLoadingMercari = true
         mercariError = ""
-        let result = await MarketplaceSearch.fetch(
-            source: .mercari, productName: productName, barcode: barcode, modelNumber: modelNumber
-        )
-        mercariPrice = result
-        mercariError = result?.ok == true ? "" : (result?.error ?? "メルカリの現在出品価格を取得できませんでした。")
+
+        var bestResult: YahooPriceResponse?
+
+        for query in candidates {
+            let result =
+                await MercariPriceAPI.fetch(
+                    productName: query
+                )
+
+            if let result,
+               result.ok {
+                if bestResult == nil
+                    || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                }
+
+                // Enough body listings were found. Avoid unnecessary extra calls.
+                if result.count >= 8 {
+                    break
+                }
+            }
+        }
+
+        // A first request can hit a freshly started Cloud Run instance.
+        // Retry once automatically instead of making the user go back and
+        // select another candidate to warm the service.
+        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+            try? await Task.sleep(
+                nanoseconds: 800_000_000
+            )
+
+            if let retryQuery = candidates.first {
+                let retry =
+                    await MercariPriceAPI.fetch(
+                        productName: retryQuery
+                    )
+
+                if let retry,
+                   retry.ok,
+                   retry.count > (bestResult?.count ?? 0) {
+                    bestResult = retry
+                }
+            }
+        }
+
+        mercariPrice = bestResult
+
+        if let bestResult,
+           bestResult.ok {
+            mercariError = ""
+        } else {
+            mercariError =
+                bestResult?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "メルカリの現在出品価格を取得できませんでした。"
+        }
+
         isLoadingMercari = false
     }
 
     @MainActor
     private func loadYahooPrice() async {
-        guard !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let candidates =
+            stableSearchCandidates
+
+        guard !candidates.isEmpty
+                || !barcode
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    .isEmpty else {
+            return
+        }
+
         isLoadingYahoo = true
         yahooError = ""
-        let result = await MarketplaceSearch.fetch(
-            source: .yahoo, productName: productName, barcode: barcode, modelNumber: modelNumber
-        )
-        yahooPrice = result
-        yahooError = result?.ok == true ? "" : (result?.error ?? "Yahoo!中古価格を取得できませんでした。")
+
+        // Yahoo can use JAN/EAN, so keep it on every attempt.
+        let queries =
+            candidates.isEmpty
+            ? [productName]
+            : candidates
+
+        var bestResult: YahooPriceResponse?
+
+        for query in queries {
+            let result =
+                await YahooPriceAPI.fetch(
+                    productName: query,
+                    barcode: barcode
+                )
+
+            if let result,
+               result.ok {
+                if bestResult == nil
+                    || result.count > (bestResult?.count ?? 0) {
+                    bestResult = result
+                }
+
+                if result.count >= 8 {
+                    break
+                }
+            }
+        }
+
+        if bestResult == nil || (bestResult?.count ?? 0) == 0 {
+            try? await Task.sleep(
+                nanoseconds: 800_000_000
+            )
+
+            let retryQuery =
+                queries.first
+                ?? productName
+
+            let retry =
+                await YahooPriceAPI.fetch(
+                    productName: retryQuery,
+                    barcode: barcode
+                )
+
+            if let retry,
+               retry.ok,
+               retry.count > (bestResult?.count ?? 0) {
+                bestResult = retry
+            }
+        }
+
+        yahooPrice = bestResult
+
+        if let bestResult,
+           bestResult.ok {
+            yahooError = ""
+        } else {
+            yahooError =
+                bestResult?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "Yahoo!中古価格を取得できませんでした。"
+        }
+
         isLoadingYahoo = false
     }
 
     @MainActor
     private func loadRakumaPrice() async {
-        guard !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let candidates =
+            Array(
+                stableSearchCandidates
+                    .prefix(3)
+            )
+
+        guard !candidates.isEmpty else {
+            return
+        }
+
         isLoadingRakuma = true
         rakumaError = ""
-        let result = await MarketplaceSearch.fetch(
-            source: .rakuma, productName: productName, barcode: barcode, modelNumber: modelNumber
-        )
-        rakumaPrice = result
-        rakumaError = result?.ok == true ? "" : (result?.error ?? "楽天ラクマの現在出品価格を取得できませんでした。")
+
+        // Rakuma is slower than the other services, so search the stable
+        // candidate names in parallel and keep the result with the most hits.
+        let results =
+            await withTaskGroup(
+                of: YahooPriceResponse?.self
+            ) { group in
+                for query in candidates {
+                    group.addTask {
+                        await RakumaPriceAPI.fetch(
+                            productName: query
+                        )
+                    }
+                }
+
+                var collected:
+                    [YahooPriceResponse] = []
+
+                for await result in group {
+                    if let result,
+                       result.ok {
+                        collected.append(result)
+                    }
+                }
+
+                return collected
+            }
+
+        var bestResult =
+            results.max {
+                $0.count < $1.count
+            }
+
+        // One automatic retry only when all parallel searches returned zero.
+        if bestResult == nil
+            || (bestResult?.count ?? 0) == 0 {
+
+            try? await Task.sleep(
+                nanoseconds: 500_000_000
+            )
+
+            if let retryQuery =
+                candidates.first {
+
+                let retry =
+                    await RakumaPriceAPI.fetch(
+                        productName: retryQuery
+                    )
+
+                if let retry,
+                   retry.ok {
+                    bestResult = retry
+                }
+            }
+        }
+
+        rakumaPrice = bestResult
+
+        if let bestResult,
+           bestResult.ok {
+            rakumaError = ""
+        } else {
+            rakumaError =
+                bestResult?.error?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                ?? "楽天ラクマの現在出品価格を取得できませんでした。"
+        }
+
         isLoadingRakuma = false
     }
 
@@ -5414,7 +5554,7 @@ enum RakumaPriceAPI {
             forHTTPHeaderField: "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 16
+        request.timeoutInterval = 35
 
         do {
             let (data, response) = try await URLSession.shared.data(
@@ -5465,7 +5605,7 @@ enum MercariPriceAPI {
             forHTTPHeaderField: "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 16
+        request.timeoutInterval = 20
 
         do {
             let (data, response) = try await URLSession.shared.data(
@@ -5527,7 +5667,7 @@ enum YahooPriceAPI {
                 "Content-Type"
         )
         request.httpBody = jsonData
-        request.timeoutInterval = 16
+        request.timeoutInterval = 20
 
         do {
             let (data, response) =
@@ -6024,3 +6164,4 @@ struct CameraPicker:
         }
     }
 }
+
